@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Generated build
+dist/
+
+# Firebase local/runtime files
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Firebase emulator exports
+firebase-export-*/
+emulator-data/
+
+# Secrets / local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*service-account*.json
+*service_account*.json
+
+# User/app exports and local backups
+backups/
+exports/
+*.backup.json
+
+# Temporary files
+*.tmp
+*.log
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

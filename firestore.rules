@@ -1,0 +1,674 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verifiedEmail() {
+      return signedIn()
+        && request.auth.token.email is string
+        && request.auth.token.email_verified == true;
+    }
+
+    function accessPath(uid) {
+      return /databases/$(database)/documents/access/$(uid);
+    }
+
+    function memberPath(familyId, uid) {
+      return /databases/$(database)/documents/families/$(familyId)/members/$(uid);
+    }
+
+    function invitePath(inviteId) {
+      return /databases/$(database)/documents/invites/$(inviteId);
+    }
+
+    function groupPath(familyId, groupId) {
+      return /databases/$(database)/documents/families/$(familyId)/groups/$(groupId);
+    }
+
+    function myAccess() {
+      return get(accessPath(request.auth.uid));
+    }
+
+    function hasActiveAccess(familyId) {
+      return signedIn()
+        && exists(accessPath(request.auth.uid))
+        && myAccess().data.status == 'active'
+        && myAccess().data.familyId == familyId;
+    }
+
+    function isFamilyOwner(familyId) {
+      return hasActiveAccess(familyId) && myAccess().data.role == 'owner';
+    }
+
+    // v0.8.3 group compatibility: old access/member records did not carry a
+    // groupId. They are treated as the default Family group until the owner's
+    // first v0.8.3 session migrates the authorization documents atomically.
+    function groupIdFor(data) {
+      return data.get('groupId', 'default');
+    }
+
+    function ownerShareGroupsFor(data) {
+      return data.get('shareGroupIds', [groupIdFor(data)]);
+    }
+
+    function targetHasActiveAccess(familyId, uid) {
+      return exists(accessPath(uid))
+        && get(accessPath(uid)).data.status == 'active'
+        && get(accessPath(uid)).data.familyId == familyId;
+    }
+
+    function canSeeMember(familyId, uid) {
+      return signedIn()
+        && hasActiveAccess(familyId)
+        && (
+          uid == request.auth.uid
+          || isFamilyOwner(familyId)
+          || (
+            targetHasActiveAccess(familyId, uid)
+            && (
+              (
+                get(accessPath(uid)).data.role == 'owner'
+                && ownerShareGroupsFor(get(accessPath(uid)).data).hasAny([groupIdFor(myAccess().data)])
+              )
+              || (
+                get(accessPath(uid)).data.role == 'member'
+                && groupIdFor(get(accessPath(uid)).data) == groupIdFor(myAccess().data)
+              )
+            )
+          )
+        );
+    }
+
+    function validVisibility(data) {
+      return data.visibility in ['private', 'family', 'selected']
+        && data.get('selectedViewerIds', []) is list
+        && (
+          (data.visibility != 'selected' && data.get('selectedViewerIds', []).size() == 0)
+          || (data.visibility == 'selected' && data.get('selectedViewerIds', []).size() > 0)
+        );
+    }
+
+    function canReadOwnedResource(data) {
+      return signedIn() && (
+        data.ownerId == request.auth.uid
+        || (
+          canSeeMember(data.familyId, data.ownerId)
+          && (
+            data.visibility == 'family'
+            || (
+              data.visibility == 'selected'
+              && data.get('selectedViewerIds', []).hasAny([request.auth.uid])
+            )
+          )
+        )
+      );
+    }
+
+    function validOwnedCreate(data) {
+      return signedIn()
+        && data.schemaVersion == 1
+        && data.ownerId == request.auth.uid
+        && data.familyId is string
+        && hasActiveAccess(data.familyId)
+        && validVisibility(data);
+    }
+
+    function validOwnedUpdate(before, after) {
+      return signedIn()
+        && before.ownerId == request.auth.uid
+        && hasActiveAccess(before.familyId)
+        && after.ownerId == before.ownerId
+        && after.familyId == before.familyId
+        && after.schemaVersion == before.schemaVersion
+        && validVisibility(after);
+    }
+
+    function sameInviteCore(before, after) {
+      return after.schemaVersion == before.schemaVersion
+        && after.familyId == before.familyId
+        && after.emailLower == before.emailLower
+        && after.role == before.role
+        && after.invitedBy == before.invitedBy
+        && after.createdAt == before.createdAt
+        && after.expiresAt == before.expiresAt
+        && groupIdFor(after) == groupIdFor(before);
+    }
+
+    function claimBundleMatches(inviteId, familyId, uid, role) {
+      let accessAfter = getAfter(accessPath(uid)).data;
+      let memberAfter = getAfter(memberPath(familyId, uid)).data;
+      return accessAfter.schemaVersion == 1
+        && accessAfter.familyId == familyId
+        && accessAfter.role == role
+        && accessAfter.status == 'active'
+        && accessAfter.inviteId == inviteId
+        && groupIdFor(accessAfter) == groupIdFor(getAfter(invitePath(inviteId)).data)
+        && memberAfter.schemaVersion == 1
+        && memberAfter.uid == uid
+        && memberAfter.familyId == familyId
+        && memberAfter.role == role
+        && memberAfter.status == 'active'
+        && memberAfter.inviteId == inviteId
+        && groupIdFor(memberAfter) == groupIdFor(accessAfter);
+    }
+
+    function validInviteClaim(before, after, inviteId) {
+      return verifiedEmail()
+        && before.status == 'pending'
+        && before.role == 'member'
+        && before.expiresAt is timestamp
+        && before.expiresAt > request.time
+        && before.emailLower == request.auth.token.email.lower()
+        && sameInviteCore(before, after)
+        && after.status == 'claimed'
+        && after.claimedBy == request.auth.uid
+        && after.claimedAt is timestamp
+        && after.diff(before).affectedKeys().hasOnly(['status', 'claimedBy', 'claimedAt'])
+        && claimBundleMatches(inviteId, before.familyId, request.auth.uid, before.role);
+    }
+
+    function validClaimedAccessCreate(uid, data) {
+      let inviteAfter = getAfter(invitePath(data.inviteId)).data;
+      return signedIn()
+        && request.auth.uid == uid
+        && data.keys().hasAll(['schemaVersion', 'familyId', 'role', 'status', 'inviteId'])
+        && data.keys().hasOnly(['schemaVersion', 'familyId', 'role', 'status', 'inviteId', 'groupId'])
+        && data.schemaVersion == 1
+        && data.familyId is string
+        && data.role == 'member'
+        && data.status == 'active'
+        && data.inviteId is string
+        && inviteAfter.status == 'claimed'
+        && inviteAfter.claimedBy == uid
+        && inviteAfter.familyId == data.familyId
+        && inviteAfter.role == data.role
+        && groupIdFor(data) == groupIdFor(inviteAfter);
+    }
+
+    function validClaimedMemberCreate(familyId, uid, data) {
+      let inviteAfter = getAfter(invitePath(data.inviteId)).data;
+      return signedIn()
+        && request.auth.uid == uid
+        && data.keys().hasAll([
+          'schemaVersion', 'uid', 'familyId', 'role', 'status', 'inviteId',
+          'displayName', 'identitySeeded'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion', 'uid', 'familyId', 'role', 'status', 'inviteId',
+          'displayName', 'photoURL', 'identitySeeded', 'groupId'
+        ])
+        && data.schemaVersion == 1
+        && data.uid == uid
+        && data.familyId == familyId
+        && data.role == 'member'
+        && data.status == 'active'
+        && data.inviteId is string
+        && data.displayName is string
+        && data.displayName.size() > 0
+        && data.displayName.size() <= 80
+        && data.identitySeeded == true
+        && (!data.keys().hasAny(['photoURL']) || (data.photoURL is string && data.photoURL.size() <= 2048))
+        && inviteAfter.status == 'claimed'
+        && inviteAfter.claimedBy == uid
+        && inviteAfter.familyId == familyId
+        && inviteAfter.role == data.role
+        && groupIdFor(data) == groupIdFor(inviteAfter);
+    }
+
+    function validInviteCreate(data) {
+      return data.keys().hasAll([
+          'schemaVersion', 'familyId', 'emailLower', 'role', 'status',
+          'invitedBy', 'createdAt', 'expiresAt'
+        ])
+        && data.keys().hasOnly([
+          'schemaVersion', 'familyId', 'emailLower', 'role', 'status',
+          'invitedBy', 'createdAt', 'expiresAt', 'groupId'
+        ])
+        && data.schemaVersion == 1
+        && data.familyId is string
+        && isFamilyOwner(data.familyId)
+        && data.emailLower is string
+        && data.emailLower == data.emailLower.lower()
+        && data.role == 'member'
+        && data.status == 'pending'
+        && data.invitedBy == request.auth.uid
+        && data.createdAt is timestamp
+        && data.expiresAt is timestamp
+        && data.expiresAt > request.time
+        && data.expiresAt <= request.time + duration.value(7, 'd')
+        && (groupIdFor(data) == 'default' || exists(groupPath(data.familyId, groupIdFor(data))));
+    }
+
+    function validFamilyProgressCreate(data) {
+      return signedIn()
+        && data.keys().hasAll(['schemaVersion', 'ownerId', 'familyId', 'date', 'calories', 'waterMl', 'workoutCount', 'clientUpdatedAt', 'updatedAt'])
+        && data.keys().hasOnly(['schemaVersion', 'ownerId', 'familyId', 'date', 'calories', 'waterMl', 'workoutCount', 'clientUpdatedAt', 'updatedAt'])
+        && data.schemaVersion == 1
+        && data.ownerId == request.auth.uid
+        && data.familyId is string
+        && hasActiveAccess(data.familyId)
+        && data.date is string
+        && data.date.size() == 10
+        && data.calories is int && data.calories >= 0
+        && data.waterMl is int && data.waterMl >= 0
+        && data.workoutCount is int && data.workoutCount >= 0
+        && data.clientUpdatedAt is string
+        && data.updatedAt is timestamp;
+    }
+
+    function validFamilyProgressUpdate(before, after) {
+      return signedIn()
+        && before.ownerId == request.auth.uid
+        && hasActiveAccess(before.familyId)
+        && after.ownerId == before.ownerId
+        && after.familyId == before.familyId
+        && after.date == before.date
+        && after.schemaVersion == before.schemaVersion
+        && after.diff(before).affectedKeys().hasOnly(['calories', 'waterMl', 'workoutCount', 'clientUpdatedAt', 'updatedAt'])
+        && after.calories is int && after.calories >= 0
+        && after.waterMl is int && after.waterMl >= 0
+        && after.workoutCount is int && after.workoutCount >= 0
+        && after.clientUpdatedAt is string
+        && after.updatedAt is timestamp;
+    }
+
+    function validFamilyWeeklyCreate(data) {
+      return signedIn()
+        && data.keys().hasAll(['schemaVersion', 'ownerId', 'familyId', 'weekStart', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
+        && data.keys().hasOnly(['schemaVersion', 'ownerId', 'familyId', 'weekStart', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
+        && data.schemaVersion == 1
+        && data.ownerId == request.auth.uid
+        && data.familyId is string
+        && hasActiveAccess(data.familyId)
+        && data.weekStart is string && data.weekStart.size() == 10
+        && data.weeklyCalories is int && data.weeklyCalories >= 0
+        && data.workoutCount is int && data.workoutCount >= 0
+        && data.hikeCount is int && data.hikeCount >= 0
+        && data.hikeKm is number && data.hikeKm >= 0
+        && data.calorieDays is int && data.calorieDays >= 0 && data.calorieDays <= 7
+        && data.waterDays is int && data.waterDays >= 0 && data.waterDays <= 7
+        && data.categoriesHit is int && data.categoriesHit >= 0 && data.categoriesHit <= 8
+        && data.missionScore is int && data.missionScore >= 0
+        && data.missionMax is int && data.missionMax > 0
+        && data.supplements is list && data.supplements.size() <= 50
+        && data.clientUpdatedAt is string
+        && data.updatedAt is timestamp;
+    }
+
+    function validFamilyWeeklyUpdate(before, after) {
+      return signedIn()
+        && before.ownerId == request.auth.uid
+        && hasActiveAccess(before.familyId)
+        && after.ownerId == before.ownerId
+        && after.familyId == before.familyId
+        && after.weekStart == before.weekStart
+        && after.schemaVersion == before.schemaVersion
+        && after.diff(before).affectedKeys().hasOnly(['weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
+        && after.weeklyCalories is int && after.weeklyCalories >= 0
+        && after.workoutCount is int && after.workoutCount >= 0
+        && after.hikeCount is int && after.hikeCount >= 0
+        && after.hikeKm is number && after.hikeKm >= 0
+        && after.calorieDays is int && after.calorieDays >= 0 && after.calorieDays <= 7
+        && after.waterDays is int && after.waterDays >= 0 && after.waterDays <= 7
+        && after.categoriesHit is int && after.categoriesHit >= 0 && after.categoriesHit <= 8
+        && after.missionScore is int && after.missionScore >= 0
+        && after.missionMax is int && after.missionMax > 0
+        && after.supplements is list && after.supplements.size() <= 50
+        && after.clientUpdatedAt is string
+        && after.updatedAt is timestamp;
+    }
+
+    function ownerCanManageMemberAccess(uid, before, after) {
+      let memberAfter = getAfter(memberPath(before.familyId, uid)).data;
+      let changed = after.diff(before).affectedKeys();
+      return isFamilyOwner(before.familyId)
+        && before.role == 'member'
+        && changed.hasOnly(['status', 'groupId'])
+        && after.status in ['active', 'revoked']
+        && groupIdFor(after) is string
+        && memberAfter.status == after.status
+        && groupIdFor(memberAfter) == groupIdFor(after)
+        && memberAfter.familyId == before.familyId
+        && memberAfter.uid == uid
+        && memberAfter.role == before.role;
+    }
+
+    function ownerCanUpdateOwnAccessGrouping(uid, before, after) {
+      let memberAfter = getAfter(memberPath(before.familyId, uid)).data;
+      let changed = after.diff(before).affectedKeys();
+      return signedIn()
+        && request.auth.uid == uid
+        && before.role == 'owner'
+        && isFamilyOwner(before.familyId)
+        && changed.hasOnly(['groupId', 'shareGroupIds'])
+        && groupIdFor(after) is string
+        && ownerShareGroupsFor(after) is list
+        && ownerShareGroupsFor(after).size() <= 20
+        && groupIdFor(memberAfter) == groupIdFor(after)
+        && ownerShareGroupsFor(memberAfter) == ownerShareGroupsFor(after);
+    }
+
+    function memberCanUpdatePresentation(before, after) {
+      let changed = after.diff(before).affectedKeys();
+      let sexValid = !after.keys().hasAny(['biologicalSex'])
+        || after.biologicalSex in ['female', 'male', 'other', 'prefer_not'];
+      return (
+        changed.hasOnly(['displayName', 'photoPath', 'accentColor', 'biologicalSex', 'updatedAt'])
+        && sexValid
+      ) || (
+        before.get('identitySeeded', false) != true
+        && after.identitySeeded == true
+        && changed.hasOnly(['displayName', 'photoURL', 'biologicalSex', 'identitySeeded', 'updatedAt'])
+        && after.displayName is string
+        && after.displayName.size() > 0
+        && after.displayName.size() <= 80
+        && sexValid
+        && (!after.keys().hasAny(['photoURL']) || (after.photoURL is string && after.photoURL.size() <= 2048))
+      );
+    }
+
+    function ownerCanManageMemberDocument(familyId, uid, before, after) {
+      let accessAfter = getAfter(accessPath(uid)).data;
+      let changed = after.diff(before).affectedKeys();
+      return isFamilyOwner(familyId)
+        && before.role == 'member'
+        && changed.hasOnly(['status', 'groupId'])
+        && after.status in ['active', 'revoked']
+        && groupIdFor(after) is string
+        && accessAfter.status == after.status
+        && groupIdFor(accessAfter) == groupIdFor(after)
+        && accessAfter.familyId == familyId
+        && accessAfter.role == before.role;
+    }
+
+    function ownerCanUpdateOwnMemberGrouping(familyId, uid, before, after) {
+      let accessAfter = getAfter(accessPath(uid)).data;
+      let changed = after.diff(before).affectedKeys();
+      return signedIn()
+        && request.auth.uid == uid
+        && before.role == 'owner'
+        && isFamilyOwner(familyId)
+        && changed.hasOnly(['groupId', 'shareGroupIds'])
+        && groupIdFor(after) is string
+        && ownerShareGroupsFor(after) is list
+        && ownerShareGroupsFor(after).size() <= 20
+        && groupIdFor(accessAfter) == groupIdFor(after)
+        && ownerShareGroupsFor(accessAfter) == ownerShareGroupsFor(after);
+    }
+
+    // Authorization index. Owner bootstrap is intentionally performed outside
+    // untrusted client code. New members join only through an atomic invite claim.
+    match /access/{uid} {
+      allow get: if signedIn() && (
+        request.auth.uid == uid
+        || (resource.data.familyId is string && isFamilyOwner(resource.data.familyId))
+      );
+      allow list: if signedIn()
+        && resource.data.familyId is string
+        && isFamilyOwner(resource.data.familyId);
+      allow create: if validClaimedAccessCreate(uid, request.resource.data);
+      allow update: if ownerCanManageMemberAccess(uid, resource.data, request.resource.data)
+        || ownerCanUpdateOwnAccessGrouping(uid, resource.data, request.resource.data);
+      allow delete: if false;
+    }
+
+    // Private account/settings document. Other family members, including the
+    // family owner, never receive access to it.
+    match /users/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && exists(accessPath(uid));
+      allow update, delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /families/{familyId} {
+      allow read: if hasActiveAccess(familyId);
+      // V1 has one manually bootstrapped family owner. Client-side family creation
+      // and ownership transfer stay disabled until we have a server-mediated flow.
+      allow create, delete: if false;
+      allow update: if isFamilyOwner(familyId)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.schemaVersion == resource.data.schemaVersion;
+
+      match /members/{uid} {
+        allow get: if canSeeMember(familyId, uid);
+        // A pre-v0.8.3 member may perform one legacy all-members list until the
+        // owner migrates everyone into the default group. Grouped clients query
+        // only their active group. Owners may administratively list everyone.
+        allow list: if isFamilyOwner(familyId)
+          || (hasActiveAccess(familyId) && !myAccess().data.keys().hasAny(['groupId']))
+          || (
+            hasActiveAccess(familyId)
+            && resource.data.status == 'active'
+            && (
+              (resource.data.role == 'member' && groupIdFor(resource.data) == groupIdFor(myAccess().data))
+              || (resource.data.role == 'owner' && ownerShareGroupsFor(resource.data).hasAny([groupIdFor(myAccess().data)]))
+            )
+          );
+        allow create: if validClaimedMemberCreate(familyId, uid, request.resource.data);
+        allow update: if (
+          signedIn()
+          && request.auth.uid == uid
+          && hasActiveAccess(familyId)
+          && memberCanUpdatePresentation(resource.data, request.resource.data)
+        ) || ownerCanManageMemberDocument(familyId, uid, resource.data, request.resource.data)
+          || ownerCanUpdateOwnMemberGrouping(familyId, uid, resource.data, request.resource.data);
+        allow delete: if false;
+      }
+
+      match /groups/{groupId} {
+        allow get: if isFamilyOwner(familyId)
+          || (hasActiveAccess(familyId) && groupId == groupIdFor(myAccess().data));
+        allow list: if isFamilyOwner(familyId);
+        allow create: if isFamilyOwner(familyId)
+          && request.resource.data.keys().hasAll(['schemaVersion', 'name', 'createdAt', 'updatedAt'])
+          && request.resource.data.keys().hasOnly(['schemaVersion', 'name', 'createdAt', 'updatedAt'])
+          && request.resource.data.schemaVersion == 1
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.updatedAt is timestamp;
+        allow update: if isFamilyOwner(familyId)
+          && request.resource.data.schemaVersion == resource.data.schemaVersion
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'updatedAt', 'createdAt'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 80
+          && request.resource.data.updatedAt is timestamp;
+        allow delete: if isFamilyOwner(familyId) && groupId != 'default';
+      }
+    }
+
+    match /invites/{inviteId} {
+      allow get: if signedIn() && (
+        isFamilyOwner(resource.data.familyId)
+        || (
+          verifiedEmail()
+          && resource.data.emailLower == request.auth.token.email.lower()
+        )
+      );
+      allow list: if signedIn() && isFamilyOwner(resource.data.familyId);
+      allow create: if validInviteCreate(request.resource.data);
+      allow update: if (
+        isFamilyOwner(resource.data.familyId)
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'revoked'
+        && sameInviteCore(resource.data, request.resource.data)
+        && request.resource.data.revokedAt is timestamp
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'revokedAt'])
+      ) || validInviteClaim(resource.data, request.resource.data, inviteId);
+      allow delete: if false;
+    }
+
+    match /workouts/{workoutId} {
+      allow get, list: if canReadOwnedResource(resource.data);
+      allow create: if validOwnedCreate(request.resource.data)
+        && request.resource.data.activityKind == 'strength';
+      allow update: if validOwnedUpdate(resource.data, request.resource.data)
+        && request.resource.data.activityKind == resource.data.activityKind;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /hikes/{hikeId} {
+      allow get, list: if canReadOwnedResource(resource.data);
+      allow create: if validOwnedCreate(request.resource.data)
+        && request.resource.data.activityKind in ['hike', 'walk'];
+      allow update: if validOwnedUpdate(resource.data, request.resource.data)
+        && request.resource.data.activityKind == resource.data.activityKind;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /routines/{routineId} {
+      allow get, list: if canReadOwnedResource(resource.data);
+      allow create: if validOwnedCreate(request.resource.data);
+      allow update: if validOwnedUpdate(resource.data, request.resource.data);
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Full hydration history remains owner-only. Family-facing water totals live
+    // separately in familyProgress, so timestamps and individual drinks never leak.
+    match /hydration/{hydrationId} {
+      allow get, list: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if validOwnedCreate(request.resource.data)
+        && request.resource.data.visibility == 'private';
+      allow update: if validOwnedUpdate(resource.data, request.resource.data)
+        && request.resource.data.visibility == 'private';
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+
+    // Exact supplement timestamps and dose-style entry details sync across the
+    // owner's devices. Family members receive only the bounded weekly summary
+    // in familyWeekly, avoiding unnecessary exposure of per-entry timestamps.
+    match /supplements/{supplementDayId} {
+      allow get, list: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['schemaVersion', 'ownerId', 'familyId', 'date', 'entries', 'clientUpdatedAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['schemaVersion', 'ownerId', 'familyId', 'date', 'entries', 'clientUpdatedAt', 'updatedAt'])
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.familyId is string
+        && hasActiveAccess(request.resource.data.familyId)
+        && request.resource.data.date is string && request.resource.data.date.size() == 10
+        && request.resource.data.entries is list && request.resource.data.entries.size() <= 100
+        && request.resource.data.clientUpdatedAt is string
+        && request.resource.data.updatedAt is timestamp;
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && hasActiveAccess(resource.data.familyId)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.familyId == resource.data.familyId
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['entries', 'clientUpdatedAt', 'updatedAt'])
+        && request.resource.data.entries is list && request.resource.data.entries.size() <= 100
+        && request.resource.data.clientUpdatedAt is string
+        && request.resource.data.updatedAt is timestamp;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Height and weight are deliberately never family-readable.
+    match /bodyMetrics/{uid} {
+      // Allow an owner to get their UID-addressed document even before it exists.
+      // Checking resource.data.ownerId for a missing document made the first v0.5
+      // sync fail with PERMISSION_DENIED before the client had a chance to create it.
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.familyId is string
+        && hasActiveAccess(request.resource.data.familyId);
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.familyId == resource.data.familyId
+        && request.resource.data.schemaVersion == resource.data.schemaVersion;
+      allow delete: if signedIn() && request.auth.uid == uid && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Weekly difficulty/mission configuration is private. Family-facing progress
+    // is published separately as a minimal daily summary document.
+    match /personalGoals/{goalId} {
+      allow get, list: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.familyId is string
+        && hasActiveAccess(request.resource.data.familyId);
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.familyId == resource.data.familyId
+        && request.resource.data.schemaVersion == resource.data.schemaVersion;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Family-readable daily aggregates. These intentionally expose only totals,
+    // never raw workout details, hydration timestamps, height, or weight.
+    match /familyProgress/{progressId} {
+      allow get, list: if signedIn() && canSeeMember(resource.data.familyId, resource.data.ownerId);
+      allow create: if validFamilyProgressCreate(request.resource.data);
+      allow update: if validFamilyProgressUpdate(resource.data, request.resource.data);
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+
+    // One bounded summary per user/week for family-visible achievements and
+    // supplement totals. Height, weight, exact supplement times and GPX points
+    // are intentionally absent from this document.
+    match /familyWeekly/{weeklyId} {
+      allow get, list: if signedIn() && canSeeMember(resource.data.familyId, resource.data.ownerId);
+      allow create: if validFamilyWeeklyCreate(request.resource.data);
+      allow update: if validFamilyWeeklyUpdate(resource.data, request.resource.data);
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /badges/{badgeId} {
+      allow get, list: if canReadOwnedResource(resource.data);
+      allow create: if validOwnedCreate(request.resource.data);
+      allow update: if validOwnedUpdate(resource.data, request.resource.data);
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Metadata only. Photos will live in private Cloud Storage later. Expired
+    // stories become unreadable immediately; actual deletion is handled by TTL /
+    // storage expiry when the media backend is introduced.
+    match /stories/{storyId} {
+      allow get, list: if signedIn()
+        && resource.data.expiresAt is timestamp
+        && resource.data.expiresAt > request.time
+        && canSeeMember(resource.data.familyId, resource.data.ownerId);
+      allow create: if signedIn()
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.familyId is string
+        && hasActiveAccess(request.resource.data.familyId)
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(24, 'h');
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && hasActiveAccess(resource.data.familyId)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.familyId == resource.data.familyId
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.expiresAt == resource.data.expiresAt;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Default deny. A newly introduced collection is inaccessible until its
+    // authorization policy and emulator tests exist.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
