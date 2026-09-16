@@ -1,4 +1,4 @@
-import type { AppState, HikeRecord, HydrationDay, SupplementDay, WeightEntry, WorkoutRecord, WorkoutRoutine } from "./types.js";
+import type { AppState, HikeRecord, HydrationDay, SupplementDay, WeightEntry, WorkoutExerciseEntry, WorkoutRecord, WorkoutRoutine } from "./types.js";
 import { migrateState } from "./schema.js";
 
 const STORAGE_KEY = "family-exercise:state:v1";
@@ -403,7 +403,7 @@ export function emptyState(): AppState {
   const today = isoDate();
   return {
     schemaVersion: 1,
-    user: { id: "local_user", familyId: "local_family", displayName: "Family member" },
+    user: { id: "local_user", familyId: "local_family", displayName: "User" },
     locale: "en",
     theme: "dark",
     simpleMode: true,
@@ -422,7 +422,7 @@ export function emptyState(): AppState {
     workouts: [],
     hikes: [],
     activeWorkout: null,
-    family: [{ id: "local_user", name: "Family member", workoutsThisWeek: 0, workoutGoal: 3, hikeKmThisWeek: 0 }],
+    family: [{ id: "local_user", name: "User", workoutsThisWeek: 0, workoutGoal: 3, hikeKmThisWeek: 0 }],
     familyGoal: { targetActivities: 12, completedActivities: 0 },
     weeklyWorkoutGoal: 3,
     routines: [],
@@ -820,7 +820,9 @@ export function freshWorkoutFromPrevious(state: AppState): WorkoutRecord {
     .filter(workout => workout.completedAt)
     .slice()
     .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""))[0];
-  const fallbackExercises = ["barbell_bench_press", "lat_pulldown", "leg_press"];
+  const fallbackExercises: WorkoutExerciseEntry[] = ["barbell_bench_press", "lat_pulldown", "leg_press"].map(exerciseId => ({
+    id: uid("exercise"), exerciseId, restSec: 90, notes: "", sets: []
+  }));
 
   return {
     schemaVersion: 1,
@@ -834,13 +836,15 @@ export function freshWorkoutFromPrevious(state: AppState): WorkoutRecord {
     notes: "",
     visibility: "family",
     selectedViewerIds: [],
-    exercises: (previous?.exercises ?? fallbackExercises.map(exerciseId => ({
-      id: uid("exercise"), exerciseId, restSec: 90, notes: "", sets: []
-    }))).map(exercise => ({
+    exercises: (previous?.exercises ?? fallbackExercises).map(exercise => ({
       id: uid("exercise"),
       exerciseId: exercise.exerciseId,
       restSec: exercise.restSec,
       notes: "",
+      recordingProfile: exercise.recordingProfile,
+      recordingProfileVersion: exercise.recordingProfileVersion,
+      targetRepMin: exercise.targetRepMin,
+      targetRepMax: exercise.targetRepMax,
       sets: (exercise.sets.length ? exercise.sets : [
         { id: uid("set"), weightKg: 0, reps: 0, completed: false }
       ]).map(set => ({
@@ -848,11 +852,20 @@ export function freshWorkoutFromPrevious(state: AppState): WorkoutRecord {
         weightKg: set.weightKg,
         reps: set.reps,
         durationSec: set.durationSec,
+        targetWorkSec: set.targetWorkSec,
         distanceKm: set.distanceKm,
         speedKph: set.speedKph,
         inclinePct: set.inclinePct,
         resistanceLevel: set.resistanceLevel,
         laps: set.laps,
+        recoverySec: set.recoverySec,
+        loadPerHandKg: set.loadPerHandKg,
+        cadenceRpm: set.cadenceRpm,
+        strokeRateSpm: set.strokeRateSpm,
+        pace500Sec: set.pace500Sec,
+        verticalGainM: set.verticalGainM,
+        packWeightKg: set.packWeightKg,
+        side: set.side,
         completed: false,
         setType: set.setType ?? "normal"
       }))
@@ -873,7 +886,13 @@ export function workoutFromRoutine(state: AppState, routine: WorkoutRoutine): Wo
       const sets = routine.mode === "circuit"
         ? Array.from({ length: rounds }, () => ({ id: uid("set"), ...templateSets[0], completed: false, setType: templateSets[0]?.setType ?? "normal" }))
         : templateSets.map(set => ({ id: uid("set"), ...set, completed: false, setType: set.setType ?? "normal" }));
-      return { id: uid("exercise"), exerciseId: template.exerciseId, restSec: template.restSec, notes: "", sets };
+      return {
+        id: uid("exercise"), exerciseId: template.exerciseId, restSec: template.restSec, notes: "", sets,
+        recordingProfile: template.recordingProfile,
+        recordingProfileVersion: template.recordingProfileVersion,
+        targetRepMin: template.targetRepMin,
+        targetRepMax: template.targetRepMax
+      };
     })
   };
 }
@@ -886,7 +905,17 @@ export function routineFromWorkout(workout: WorkoutRecord): WorkoutRoutine {
     rounds: workout.routineMode === "circuit" ? workout.circuitRounds : undefined,
     exercises: workout.exercises.map(exercise => ({
       exerciseId: exercise.exerciseId, restSec: exercise.restSec,
-      sets: exercise.sets.map(set => ({ weightKg: set.weightKg, reps: set.reps, durationSec: set.durationSec, distanceKm: set.distanceKm, speedKph: set.speedKph, inclinePct: set.inclinePct, resistanceLevel: set.resistanceLevel, laps: set.laps, setType: set.setType ?? "normal" }))
+      recordingProfile: exercise.recordingProfile,
+      recordingProfileVersion: exercise.recordingProfileVersion,
+      targetRepMin: exercise.targetRepMin,
+      targetRepMax: exercise.targetRepMax,
+      sets: exercise.sets.map(set => ({
+        weightKg: set.weightKg, reps: set.reps, targetWorkSec: set.targetWorkSec, durationSec: set.durationSec, distanceKm: set.distanceKm,
+        speedKph: set.speedKph, inclinePct: set.inclinePct, resistanceLevel: set.resistanceLevel, laps: set.laps,
+        recoverySec: set.recoverySec, loadPerHandKg: set.loadPerHandKg, cadenceRpm: set.cadenceRpm,
+        strokeRateSpm: set.strokeRateSpm, pace500Sec: set.pace500Sec, verticalGainM: set.verticalGainM,
+        packWeightKg: set.packWeightKg, side: set.side, setType: set.setType ?? "normal"
+      }))
     }))
   };
 }

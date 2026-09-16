@@ -1,4 +1,4 @@
-import type { GoalConfig, HikeBadgePreference, HikeRecord, HydrationDay, Locale, ProfileData, SupplementDay, SupplementUnit, Theme, WorkoutRecord } from "../core/types.js";
+import type { CustomSupplement, FamilyProfileSharing, GoalConfig, HikeBadgePreference, HikeRecord, HydrationDay, Locale, NotificationPreferences, ProfileData, SupplementDay, SupplementUnit, Theme, WorkoutRecord } from "../core/types.js";
 
 declare global {
   interface Window {
@@ -7,6 +7,8 @@ declare global {
       firebase?: Record<string, string> | null;
       appCheckSiteKey?: string | null;
       appCheckProvider?: "recaptcha-enterprise" | "recaptcha-v3";
+      pushPublicKey?: string | null;
+      feedbackFormUrl?: string | null;
     };
     // Backward-compatible with the prototype config key.
     __FAMILY_EXERCISE_CONFIG__?: {
@@ -14,12 +16,15 @@ declare global {
       firebase?: Record<string, string> | null;
       appCheckSiteKey?: string | null;
       appCheckProvider?: "recaptcha-enterprise" | "recaptcha-v3";
+      pushPublicKey?: string | null;
+      feedbackFormUrl?: string | null;
     };
   }
 }
 
 const FIREBASE_VERSION = "12.19.0";
 const INVITE_LIFETIME_MS = 6 * 24 * 60 * 60 * 1000;
+const GOOGLE_REDIRECT_MARKER = "logtogether-google-redirect-pending-v0113";
 
 type FirebaseRuntimeConfig = NonNullable<Window["__LOGTOGETHER_CONFIG__"]>;
 
@@ -63,6 +68,7 @@ export interface CloudFamilyMember {
   displayName?: string;
   photoURL?: string;
   biologicalSex?: ProfileData["biologicalSex"];
+  profileSharing?: FamilyProfileSharing;
   identitySeeded?: boolean;
 }
 
@@ -110,6 +116,7 @@ export interface CloudSupplementDay extends SupplementDay {
 
 export interface CloudWeeklySupplementTotal {
   supplementId: string;
+  customLabel?: string;
   amount: number;
   unit?: SupplementUnit;
   entries: number;
@@ -147,6 +154,10 @@ export interface CloudUserPreferences {
   weeklyWorkoutGoal: number;
   goals: GoalConfig;
   hikeBadgePreferences: HikeBadgePreference[];
+  profileSharing: FamilyProfileSharing;
+  notificationPreferences: NotificationPreferences;
+  notificationDefaultsV11_1Applied?: boolean;
+  customSupplements?: CustomSupplement[];
   clientUpdatedAt: string;
 }
 
@@ -168,6 +179,7 @@ export interface CloudFamilyDailySummary {
   calories: number;
   waterMl: number;
   workoutCount: number;
+  goldDay: boolean;
   clientUpdatedAt: string;
 }
 
@@ -197,6 +209,18 @@ export interface CloudCompanionSnapshot {
   familyBadges: CloudBadgeRecord[];
 }
 
+export interface SocialInboxEvent {
+  id: string;
+  kind: "poke" | "gold" | "badge";
+  title: string;
+  body: string;
+  url?: string;
+  emoji?: string;
+  senderUid?: string;
+  senderName?: string;
+  createdAtMs: number;
+}
+
 export interface CreatedFamilyInvite {
   id: string;
   emailLower: string;
@@ -213,6 +237,8 @@ let firestore: any = null;
 let firestoreModule: any = null;
 let appCheckModule: any = null;
 let appCheck: any = null;
+let functions: any = null;
+let functionsModule: any = null;
 let appCheckState: "not-configured" | "initializing" | "active" | "error" = "not-configured";
 let appCheckError: string | null = null;
 
@@ -291,10 +317,17 @@ async function ensureAuth(): Promise<any | null> {
   const authUrl = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-auth.js`;
   const loadedAuthModule = await import(authUrl);
   authModule = loadedAuthModule;
-  // Keep the browser popup/redirect resolver supplied by getAuth().
-  // The exact call shape is also covered by the v0.2.2 regression test.
-  auth = loadedAuthModule.getAuth(app);
-  await loadedAuthModule.setPersistence(auth, loadedAuthModule.browserLocalPersistence);
+  // v0.11.3 uses Firebase's supported persistence fallback chain. Private /
+  // restricted browser sessions can fall back instead of silently losing the
+  // Google session after a successful account chooser.
+  auth = loadedAuthModule.initializeAuth(firebaseApp, {
+    persistence: [
+      loadedAuthModule.indexedDBLocalPersistence,
+      loadedAuthModule.browserLocalPersistence,
+      loadedAuthModule.browserSessionPersistence
+    ],
+    popupRedirectResolver: loadedAuthModule.browserPopupRedirectResolver
+  });
   return auth;
 }
 
@@ -307,6 +340,16 @@ async function ensureFirestore(): Promise<any | null> {
   firestoreModule = await import(firestoreUrl);
   firestore = firestoreModule.getFirestore(firebaseApp);
   return firestore;
+}
+
+async function ensureFunctions(): Promise<any | null> {
+  const firebaseApp = await ensureApp();
+  if (!firebaseApp) return null;
+  if (functions) return functions;
+  const functionsUrl = `https://www.gstatic.com/firebasejs/${FIREBASE_VERSION}/firebase-functions.js`;
+  functionsModule = await import(functionsUrl);
+  functions = functionsModule.getFunctions(firebaseApp, "asia-east1");
+  return functions;
 }
 
 function publicUser(user: any): FirebaseAuthUser | null {
@@ -361,6 +404,26 @@ function parseAccess(data: Record<string, any>): CloudAccessRecord {
   };
 }
 
+function parseProfileSharing(value: any): FamilyProfileSharing {
+  return {
+    biologicalSex: value?.biologicalSex !== false,
+    supplements: value?.supplements !== false,
+    recentWorkouts: value?.recentWorkouts !== false,
+    recentHikes: value?.recentHikes !== false
+  };
+}
+
+function parseNotificationPreferences(value: any): NotificationPreferences {
+  const cleanIds = (items:any) => Array.isArray(items) ? items.filter((item:any)=>typeof item === "string" && item.length > 0).slice(0,100) : [];
+  return {
+    goldDays: value?.goldDays !== false,
+    badges: value?.badges !== false,
+    pokes: value?.pokes !== false,
+    mutedPokeUids: cleanIds(value?.mutedPokeUids),
+    mutedPokeGroupIds: cleanIds(value?.mutedPokeGroupIds)
+  };
+}
+
 function parseMember(data: Record<string, any>): CloudFamilyMember {
   if (data.schemaVersion !== 1) throw new Error("Unsupported family member schema.");
   if (typeof data.uid !== "string" || typeof data.familyId !== "string") throw new Error("Invalid family member record.");
@@ -381,6 +444,7 @@ function parseMember(data: Record<string, any>): CloudFamilyMember {
     displayName: typeof data.displayName === "string" ? data.displayName : undefined,
     photoURL: typeof data.photoURL === "string" ? data.photoURL : undefined,
     biologicalSex: ["female", "male", "other", "prefer_not"].includes(data.biologicalSex) ? data.biologicalSex : undefined,
+    profileSharing: parseProfileSharing(data.profileSharing),
     identitySeeded: data.identitySeeded === true
   };
 }
@@ -402,18 +466,48 @@ export async function observeFirebaseAuth(
   return authModule.onAuthStateChanged(instance, (user: any) => callback(publicUser(user)));
 }
 
-export async function signInWithGoogle(): Promise<void> {
+export type GoogleSignInResult =
+  | { mode: "popup"; user: FirebaseAuthUser }
+  | { mode: "redirect" };
+
+export function googleSignInRedirectPending(): boolean {
+  try { return sessionStorage.getItem(GOOGLE_REDIRECT_MARKER) === "1"; }
+  catch { return false; }
+}
+
+export async function consumeGoogleRedirectSignIn(): Promise<FirebaseAuthUser | null> {
+  if (!googleSignInRedirectPending()) return null;
+  const instance = await ensureAuth();
+  if (!instance || !authModule) throw new Error("Firebase Authentication is not configured.");
+  try {
+    const result = await authModule.getRedirectResult(instance);
+    return publicUser(result?.user ?? instance.currentUser);
+  } finally {
+    try { sessionStorage.removeItem(GOOGLE_REDIRECT_MARKER); } catch { /* Session storage can be unavailable in hardened browsers. */ }
+  }
+}
+
+export async function signInWithGoogle(): Promise<GoogleSignInResult> {
   const instance = await ensureAuth();
   if (!instance || !authModule) throw new Error("Firebase Authentication is not configured.");
 
   const provider = new authModule.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
   try {
-    await authModule.signInWithPopup(instance, provider);
+    const credential = await authModule.signInWithPopup(instance, provider);
+    const user = publicUser(credential?.user ?? instance.currentUser);
+    if (!user) throw new Error("Google sign-in completed without a Firebase user.");
+    return { mode: "popup", user };
   } catch (error: any) {
-    if (error?.code === "auth/popup-blocked" || error?.code === "auth/operation-not-supported-in-this-environment") {
+    const redirectFallbackCodes = new Set([
+      "auth/popup-blocked",
+      "auth/operation-not-supported-in-this-environment",
+      "auth/web-storage-unsupported"
+    ]);
+    if (redirectFallbackCodes.has(String(error?.code ?? ""))) {
+      try { sessionStorage.setItem(GOOGLE_REDIRECT_MARKER, "1"); } catch { /* Redirect can still proceed. */ }
       await authModule.signInWithRedirect(instance, provider);
-      return;
+      return { mode: "redirect" };
     }
     throw error;
   }
@@ -619,7 +713,7 @@ export async function claimFamilyInvite(
   if (invite.expiresAt?.toMillis && invite.expiresAt.toMillis() <= Date.now()) throw new Error("This invite has expired.");
 
   const memberRef = firestoreModule.doc(db, "families", invite.familyId, "members", user.uid);
-  const displayName = (user.displayName || user.email.split("@")[0] || "Family member").slice(0, 80);
+  const displayName = (user.displayName || user.email.split("@")[0] || "User").slice(0, 80);
   const batch = firestoreModule.writeBatch(db);
   batch.set(accessRef, {
     schemaVersion: 1,
@@ -667,7 +761,7 @@ export async function seedGoogleMemberIdentity(
 
   // Legacy/bootstrap members may not have identitySeeded yet. Preserve any
   // name already chosen in LogTogether; Google is only the fallback default.
-  const displayName = (self.displayName?.trim() || user.displayName || user.email?.split("@")[0] || "Family member").slice(0, 80);
+  const displayName = (self.displayName?.trim() || user.displayName || user.email?.split("@")[0] || "User").slice(0, 80);
   const memberRef = firestoreModule.doc(db, "families", membership.access.familyId, "members", user.uid);
   const patch: Record<string, any> = {
     displayName,
@@ -689,7 +783,8 @@ export async function updateMyFamilyDisplayName(
   user: FirebaseAuthUser,
   membership: CloudMembership,
   displayNameValue: string,
-  biologicalSex?: ProfileData["biologicalSex"]
+  biologicalSex?: ProfileData["biologicalSex"],
+  profileSharing?: FamilyProfileSharing
 ): Promise<CloudMembership> {
   requireSignedInUser(user);
   if (membership.access.status !== "active") throw new Error("Active family access is required.");
@@ -697,19 +792,26 @@ export async function updateMyFamilyDisplayName(
   if (!displayName) throw new Error("Display name cannot be empty.");
   const db = await ensureFirestore();
   if (!db || !firestoreModule) throw new Error("Cloud Firestore is not configured.");
+  const normalizedSharing = profileSharing ? parseProfileSharing(profileSharing) : undefined;
   const memberRef = firestoreModule.doc(db, "families", membership.access.familyId, "members", user.uid);
   const patch: Record<string, any> = {
     displayName,
     identitySeeded: true,
-    biologicalSex: biologicalSex ?? firestoreModule.deleteField(),
+    biologicalSex: normalizedSharing?.biologicalSex === false ? firestoreModule.deleteField() : (biologicalSex ?? firestoreModule.deleteField()),
     updatedAt: firestoreModule.serverTimestamp()
   };
+  if (normalizedSharing) patch.profileSharing = normalizedSharing;
   await firestoreModule.updateDoc(memberRef, patch);
   return {
     ...membership,
-    members: membership.members.map(member => member.uid === user.uid
-      ? { ...member, displayName, biologicalSex, identitySeeded: true }
-      : member)
+    members: membership.members.map(member => {
+      if (member.uid !== user.uid) return member;
+      const next: CloudFamilyMember = { ...member, displayName, identitySeeded: true };
+      if (normalizedSharing) next.profileSharing = normalizedSharing;
+      if (normalizedSharing?.biologicalSex === false || !biologicalSex) delete next.biologicalSex;
+      else next.biologicalSex = biologicalSex;
+      return next;
+    })
   };
 }
 
@@ -1031,10 +1133,16 @@ function parseCloudPreferences(snapshot: any): CloudUserPreferences | null {
         ...(Number.isFinite(item.order) ? { order: Math.max(0, Math.round(item.order)) } : {})
       }))
     : [];
+  const customSupplements: CustomSupplement[] = Array.isArray(data.customSupplements)
+    ? data.customSupplements.filter((item:any)=>item && typeof item.id === "string" && typeof item.label === "string" && item.label.trim()).slice(0,40).map((item:any)=>({
+        id:String(item.id).slice(0,120), label:String(item.label).trim().slice(0,100),
+        ...(Number.isFinite(item.defaultAmount) && Number(item.defaultAmount)>0 ? {defaultAmount:Math.min(100000,Number(item.defaultAmount))} : {}),
+        ...(["serving","capsule","tablet","mg","mcg","g","IU","scoop","drop"].includes(item.defaultUnit) ? {defaultUnit:item.defaultUnit as SupplementUnit} : {})
+      })) : [];
   return {
     schemaVersion: 1, ownerId: data.ownerId, familyId: data.familyId, locale: data.locale, theme: data.theme, simpleMode: data.simpleMode,
     accentColor: data.accentColor, weeklyWorkoutGoal: Number.isFinite(data.weeklyWorkoutGoal) ? Math.max(1, Math.round(data.weeklyWorkoutGoal)) : 3,
-    goals: data.goals as GoalConfig, hikeBadgePreferences, clientUpdatedAt: typeof data.clientUpdatedAt === "string" ? data.clientUpdatedAt : ""
+    goals: data.goals as GoalConfig, hikeBadgePreferences, profileSharing: parseProfileSharing(data.profileSharing), notificationPreferences: parseNotificationPreferences(data.notificationPreferences), notificationDefaultsV11_1Applied: data.notificationDefaultsV11_1Applied === true, customSupplements, clientUpdatedAt: typeof data.clientUpdatedAt === "string" ? data.clientUpdatedAt : ""
   };
 }
 
@@ -1056,7 +1164,7 @@ function parseCloudHydration(snapshot: any): HydrationDay {
 function parseFamilyDaily(snapshot: any): CloudFamilyDailySummary {
   const data = snapshot.data() as Record<string, any>;
   if (data.schemaVersion !== 1 || typeof data.ownerId !== "string" || typeof data.familyId !== "string" || typeof data.date !== "string") throw new Error("Invalid family progress document.");
-  return { schemaVersion: 1, ownerId: data.ownerId, familyId: data.familyId, date: data.date, calories: Math.max(0, Math.round(Number(data.calories) || 0)), waterMl: Math.max(0, Math.round(Number(data.waterMl) || 0)), workoutCount: Math.max(0, Math.round(Number(data.workoutCount) || 0)), clientUpdatedAt: typeof data.clientUpdatedAt === "string" ? data.clientUpdatedAt : "" };
+  return { schemaVersion: 1, ownerId: data.ownerId, familyId: data.familyId, date: data.date, calories: Math.max(0, Math.round(Number(data.calories) || 0)), waterMl: Math.max(0, Math.round(Number(data.waterMl) || 0)), workoutCount: Math.max(0, Math.round(Number(data.workoutCount) || 0)), goldDay: data.goldDay === true, clientUpdatedAt: typeof data.clientUpdatedAt === "string" ? data.clientUpdatedAt : "" };
 }
 
 function parseCloudSupplementDay(snapshot: any): CloudSupplementDay {
@@ -1067,6 +1175,7 @@ function parseCloudSupplementDay(snapshot: any): CloudSupplementDay {
     id: entry.id,
     at: entry.at,
     supplementId: entry.supplementId,
+    ...(typeof entry.customLabel === "string" && entry.customLabel.trim() ? { customLabel: entry.customLabel.trim().slice(0,100) } : {}),
     ...(Number.isFinite(entry.amount) ? { amount: Math.max(0, Number(entry.amount)) } : {}),
     ...(units.has(entry.unit) ? { unit: entry.unit as SupplementUnit } : {}),
     ...(typeof entry.editedAt === "string" ? { editedAt: entry.editedAt } : {})
@@ -1080,6 +1189,7 @@ function parseFamilyWeekly(snapshot: any): CloudFamilyWeeklySummary {
   const validUnits = new Set<SupplementUnit>(["mg", "mcg", "g", "IU", "capsule", "tablet", "serving", "scoop", "drop"]);
   const supplements = Array.isArray(data.supplements) ? data.supplements.slice(0, 50).filter((item: any) => item && typeof item.supplementId === "string").map((item: any) => ({
     supplementId: item.supplementId,
+    ...(typeof item.customLabel === "string" && item.customLabel.trim() ? {customLabel:item.customLabel.trim().slice(0,100)} : {}),
     amount: Math.max(0, Number(item.amount) || 0),
     ...(validUnits.has(item.unit) ? { unit: item.unit as SupplementUnit } : {}),
     entries: Math.max(0, Math.round(Number(item.entries) || 0)),
@@ -1189,7 +1299,7 @@ export async function saveFamilyDailySummary(user: FirebaseAuthUser, membership:
   if (!db || !firestoreModule) throw new Error("Cloud Firestore is not configured.");
   const clientUpdatedAt = new Date().toISOString();
   const id = `${user.uid}_${summary.date}`;
-  await firestoreModule.setDoc(firestoreModule.doc(db, "familyProgress", id), { schemaVersion: 1, ownerId: user.uid, familyId: membership.access.familyId, date: summary.date, calories: Math.max(0, Math.round(summary.calories)), waterMl: Math.max(0, Math.round(summary.waterMl)), workoutCount: Math.max(0, Math.round(summary.workoutCount)), clientUpdatedAt, updatedAt: firestoreModule.serverTimestamp() });
+  await firestoreModule.setDoc(firestoreModule.doc(db, "familyProgress", id), { schemaVersion: 1, ownerId: user.uid, familyId: membership.access.familyId, date: summary.date, calories: Math.max(0, Math.round(summary.calories)), waterMl: Math.max(0, Math.round(summary.waterMl)), workoutCount: Math.max(0, Math.round(summary.workoutCount)), goldDay: summary.goldDay === true, clientUpdatedAt, updatedAt: firestoreModule.serverTimestamp() });
 }
 
 export async function saveCloudSupplementDay(user: FirebaseAuthUser, membership: CloudMembership, day: SupplementDay): Promise<void> {
@@ -1204,7 +1314,7 @@ export async function saveCloudSupplementDay(user: FirebaseAuthUser, membership:
     ownerId: user.uid,
     familyId: membership.access.familyId,
     date: day.date,
-    entries: day.entries.map(entry => ({ id: entry.id, at: entry.at, supplementId: entry.supplementId, ...(Number.isFinite(entry.amount) ? { amount: entry.amount } : {}), ...(entry.unit ? { unit: entry.unit } : {}), ...(entry.editedAt ? { editedAt: entry.editedAt } : {}) })),
+    entries: day.entries.map(entry => ({ id: entry.id, at: entry.at, supplementId: entry.supplementId, ...(entry.customLabel ? {customLabel:entry.customLabel.slice(0,100)} : {}), ...(Number.isFinite(entry.amount) ? { amount: entry.amount } : {}), ...(entry.unit ? { unit: entry.unit } : {}), ...(entry.editedAt ? { editedAt: entry.editedAt } : {}) })),
     clientUpdatedAt,
     updatedAt: firestoreModule.serverTimestamp()
   });
@@ -1248,4 +1358,169 @@ export async function deleteCloudBadge(user: FirebaseAuthUser, membership: Cloud
   if (!db || !firestoreModule) throw new Error("Cloud Firestore is not configured.");
   const safeId = badgeId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
   await firestoreModule.deleteDoc(firestoreModule.doc(db, "badges", `${user.uid}_${safeId}`));
+}
+
+
+export interface PushRegistrationStatus {
+  supported: boolean;
+  configured: boolean;
+  permission: NotificationPermission | "unsupported";
+  subscribed: boolean;
+}
+
+export interface PokeWalletState { balance: number; maxBalance: number; unlimited?: boolean; }
+
+function webPushKey(): string {
+  const value=runtimeConfig()?.pushPublicKey?.trim() ?? "";
+  return value.startsWith("__LOGTOGETHER_") ? "" : value;
+}
+
+function base64UrlToUint8Array(value: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) {
+    bytes[i] = raw.charCodeAt(i);
+  }
+  return bytes;
+}
+
+async function subscriptionId(endpoint: string): Promise<string> {
+  if (globalThis.crypto?.subtle) {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(endpoint));
+    return [...new Uint8Array(digest)].map(value => value.toString(16).padStart(2,"0")).join("").slice(0,48);
+  }
+  let hash=0; for (const char of endpoint) hash=((hash<<5)-hash+char.charCodeAt(0))|0;
+  return `legacy-${Math.abs(hash)}`;
+}
+
+export async function observeSocialInbox(
+  user: FirebaseAuthUser,
+  callback: (events: SocialInboxEvent[]) => void
+): Promise<() => void> {
+  requireSignedInUser(user);
+  const db = await ensureFirestore();
+  if (!db || !firestoreModule) { callback([]); return () => undefined; }
+  const ref = firestoreModule.collection(db, "users", user.uid, "socialInbox");
+  const query = firestoreModule.query(ref, firestoreModule.orderBy("createdAt", "desc"), firestoreModule.limit(24));
+  return firestoreModule.onSnapshot(query, (snapshot:any) => {
+    const events: SocialInboxEvent[] = snapshot.docs.map((doc:any) => {
+      const data = doc.data() ?? {};
+      const kind = ["poke","gold","badge"].includes(data.kind) ? data.kind : "poke";
+      return {
+        id:doc.id, kind, title:String(data.title ?? "LogTogether").slice(0,160), body:String(data.body ?? "").slice(0,300),
+        ...(typeof data.url === "string" ? {url:data.url.slice(0,200)} : {}),
+        ...(typeof data.emoji === "string" ? {emoji:data.emoji.slice(0,8)} : {}),
+        ...(typeof data.senderUid === "string" ? {senderUid:data.senderUid.slice(0,128)} : {}),
+        ...(typeof data.senderName === "string" ? {senderName:data.senderName.slice(0,80)} : {}),
+        createdAtMs:data.createdAt?.toMillis?.() ?? 0
+      } as SocialInboxEvent;
+    });
+    callback(events);
+  }, (error:any) => { console.warn("Social inbox:", error); callback([]); });
+}
+
+export async function pushRegistrationStatus(): Promise<PushRegistrationStatus> {
+  const supported = typeof Notification !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
+  const configured = Boolean(webPushKey());
+  if (!supported) return { supported:false, configured, permission:"unsupported", subscribed:false };
+  const registration = await navigator.serviceWorker.ready.catch(()=>null);
+  const subscription = registration ? await registration.pushManager.getSubscription().catch(()=>null) : null;
+  return { supported:true, configured, permission:Notification.permission, subscribed:Boolean(subscription) };
+}
+
+export async function enablePushNotifications(user: FirebaseAuthUser, membership: CloudMembership): Promise<PushRegistrationStatus> {
+  requireSignedInUser(user);
+  if (membership.access.status !== "active") throw new Error("Active family access is required for notifications.");
+  const key=webPushKey();
+  if (!key) throw new Error("Push notifications are not configured on this deployment.");
+  if (typeof Notification === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("Push notifications are not supported on this device.");
+  const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+  if (permission !== "granted") throw new Error("Notification permission was not granted.");
+  const registration = await navigator.serviceWorker.ready;
+  let subscription = await registration.pushManager.getSubscription();
+  if (!subscription) {
+    subscription = await registration.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:base64UrlToUint8Array(key) });
+  }
+  const json=subscription.toJSON();
+  if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) throw new Error("The browser returned an incomplete push subscription.");
+  const db=await ensureFirestore(); if(!db||!firestoreModule) throw new Error("Cloud Firestore is not configured.");
+  const id=await subscriptionId(json.endpoint);
+  await firestoreModule.setDoc(firestoreModule.doc(db,"users",user.uid,"pushSubscriptions",id),{
+    schemaVersion:1, ownerId:user.uid, familyId:membership.access.familyId, endpoint:json.endpoint,
+    keys:{p256dh:json.keys.p256dh,auth:json.keys.auth}, userAgent:navigator.userAgent.slice(0,240),
+    clientUpdatedAt:new Date().toISOString(), updatedAt:firestoreModule.serverTimestamp()
+  });
+  return pushRegistrationStatus();
+}
+
+export async function disablePushNotifications(user: FirebaseAuthUser): Promise<PushRegistrationStatus> {
+  requireSignedInUser(user);
+  if (typeof Notification === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return pushRegistrationStatus();
+  const registration=await navigator.serviceWorker.ready.catch(()=>null);
+  const subscription=registration ? await registration.pushManager.getSubscription().catch(()=>null) : null;
+  if (subscription) {
+    const db=await ensureFirestore();
+    if(db&&firestoreModule){const id=await subscriptionId(subscription.endpoint); await firestoreModule.deleteDoc(firestoreModule.doc(db,"users",user.uid,"pushSubscriptions",id)).catch(()=>undefined);}
+    await subscription.unsubscribe().catch(()=>false);
+  }
+  return pushRegistrationStatus();
+}
+
+export async function loadPokeWallet(user: FirebaseAuthUser): Promise<PokeWalletState> {
+  requireSignedInUser(user);
+  const db=await ensureFirestore(); if(!db||!firestoreModule) throw new Error("Cloud Firestore is not configured.");
+  const snapshot=await firestoreModule.getDoc(firestoreModule.doc(db,"pokeWallets",user.uid));
+  const data=snapshot.exists()?snapshot.data():{};
+  return {balance:Number.isFinite(data.balance)?Math.max(0,Math.min(7,Math.round(data.balance))):0,maxBalance:7};
+}
+
+export async function sendPoke(user: FirebaseAuthUser, recipientUid: string, emoji: string): Promise<PokeWalletState> {
+  requireSignedInUser(user);
+  if (!recipientUid || recipientUid === user.uid) throw new Error("Choose another family member.");
+  const instance=await ensureFunctions(); if(!instance||!functionsModule) throw new Error("Cloud Functions are not configured.");
+  const callable=functionsModule.httpsCallable(instance,"sendPoke");
+  const result=await callable({recipientUid,emoji});
+  const data=result?.data ?? {};
+  return {balance:Number.isFinite(data.balance)?Math.max(0,Math.min(7,Math.round(data.balance))):0,maxBalance:7,unlimited:data.unlimited === true};
+}
+
+export interface BackendDiagnostics {
+  month: string;
+  activeMembers: number;
+  pushSubscriptions: number;
+  pokeCalls: number;
+  pokesDelivered: number;
+  pokesBlocked: number;
+  goldEvents: number;
+  badgeEvents: number;
+  testNotifications: number;
+  pushDeliveries: number;
+  pushFailures: number;
+  note: string;
+}
+
+export async function sendTestNotification(user: FirebaseAuthUser): Promise<void> {
+  requireSignedInUser(user);
+  if (typeof Notification === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+    throw new Error("Push notifications are not supported on this device.");
+  }
+  const registration=await navigator.serviceWorker.ready;
+  const subscription=await registration.pushManager.getSubscription();
+  if (!subscription) throw new Error("Enable notifications on this device before sending a test notification.");
+  const id=await subscriptionId(subscription.endpoint);
+  const instance=await ensureFunctions(); if(!instance||!functionsModule) throw new Error("Cloud Functions are not configured.");
+  const callable=functionsModule.httpsCallable(instance,"sendTestNotification");
+  await callable({subscriptionId:id});
+}
+
+export async function loadBackendDiagnostics(user: FirebaseAuthUser): Promise<BackendDiagnostics> {
+  requireSignedInUser(user);
+  const instance=await ensureFunctions(); if(!instance||!functionsModule) throw new Error("Cloud Functions are not configured.");
+  const callable=functionsModule.httpsCallable(instance,"getBackendDiagnostics");
+  const result=await callable({});
+  const data=result?.data ?? {};
+  const n=(key:string)=>Math.max(0,Math.round(Number(data[key])||0));
+  return {month:String(data.month??""),activeMembers:n("activeMembers"),pushSubscriptions:n("pushSubscriptions"),pokeCalls:n("pokeCalls"),pokesDelivered:n("pokesDelivered"),pokesBlocked:n("pokesBlocked"),goldEvents:n("goldEvents"),badgeEvents:n("badgeEvents"),testNotifications:n("testNotifications"),pushDeliveries:n("pushDeliveries"),pushFailures:n("pushFailures"),note:String(data.note??"")};
 }

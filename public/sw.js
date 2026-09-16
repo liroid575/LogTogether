@@ -1,4 +1,4 @@
-const CACHE = "logtogether-shell-v0.9.0";
+const CACHE = "logtogether-shell-v0.11.7-family-burst-ui-polish";
 const SHELL = [
   "/",
   "/index.html",
@@ -7,6 +7,8 @@ const SHELL = [
   "/manifest.webmanifest",
   "/icon-192.png",
   "/icon-512.png",
+  "/timer-cue-single.mp3",
+  "/timer-cue-double.mp3",
   "/assets/main.js"
 ];
 
@@ -28,7 +30,6 @@ self.addEventListener("fetch", event => {
   if (url.origin !== self.location.origin) return;
 
   // Firebase Hosting reserves /__/ for Auth and other Firebase helpers.
-  // Never let the PWA shell/fallback intercept that namespace.
   if (url.pathname.startsWith("/__")) return;
 
   event.respondWith(
@@ -47,4 +48,33 @@ self.addEventListener("fetch", event => {
         return Response.error();
       })
   );
+});
+
+self.addEventListener("push", event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; }
+  catch { data = { body: event.data ? event.data.text() : "" }; }
+  const title = typeof data.title === "string" && data.title.trim() ? data.title : "LogTogether";
+  const eventId = typeof data.eventId === "string" && data.eventId ? data.eventId : `${data.kind || "family"}-${Date.now()}`;
+  const options = {
+    body: typeof data.body === "string" ? data.body : "",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: `logtogether-${eventId}`,
+    renotify: false,
+    silent: false,
+    data: { url: typeof data.url === "string" ? data.url : "/#family", eventId, kind: data.kind || "family" }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "/#family", self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(clients => {
+    for (const client of clients) {
+      if ("focus" in client) { client.navigate(target).catch(()=>undefined); return client.focus(); }
+    }
+    return self.clients.openWindow ? self.clients.openWindow(target) : undefined;
+  }));
 });

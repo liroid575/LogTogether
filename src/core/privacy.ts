@@ -13,9 +13,9 @@ export function familyPrivacySummary(locale: Locale): FamilyPrivacySummary {
       shared: [
         "運動紀錄與運動備註",
         "健行摘要（名稱、日期、距離、時間、海拔與備註）",
-        "生理性別",
+        "使用者自行開啟的家庭個人頁內容（生理性別、補充品週總覽、最近運動／健行）",
         "每日熱量與飲水總量",
-        "每週任務、補充品週總覽與徽章"
+        "每週任務與徽章"
       ],
       privateToAccount: [
         "身高與體重",
@@ -38,9 +38,9 @@ export function familyPrivacySummary(locale: Locale): FamilyPrivacySummary {
     shared: [
       "Workout records and workout notes",
       "Hike summaries (name, date, distance, time, elevation and notes)",
-      "Biological sex",
+      "User-enabled family-profile details (biological sex, weekly supplements, recent workouts/hikes)",
       "Daily calorie and water totals",
-      "Weekly missions, weekly supplement summaries and badges"
+      "Weekly missions and badges"
     ],
     privateToAccount: [
       "Height and weight",

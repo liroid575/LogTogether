@@ -3,8 +3,28 @@ export type Theme = "dark" | "light";
 export type Visibility = "private" | "family" | "selected";
 export type ActivityKind = "strength" | "hike" | "walk";
 export type ExerciseCategory = "chest" | "back" | "shoulders" | "arms" | "legs" | "core" | "cardio" | "mobility";
-export type ExerciseLibraryGroup = "gym" | "calisthenics" | "outdoor_cardio" | "mobility_yoga" | "swimming" | "kickboxing" | "sports_other";
-export type ExerciseLoggingProfile = "sets" | "cardio_session" | "mobility_session" | "rounds";
+export type ExerciseLibraryGroup = "home_functional" | "gym" | "calisthenics" | "outdoor_cardio" | "mobility_yoga" | "swimming" | "kickboxing" | "sports_other";
+export type ExerciseLoggingProfile =
+  | "sets"
+  | "skill_sets"
+  | "isometric_sets"
+  | "balance_hold"
+  | "loaded_carry"
+  | "conditioning_intervals"
+  | "cardio_session"
+  | "mobility_session" // legacy v0.9 compatibility only
+  | "sprint_intervals"
+  | "static_stretch"
+  | "dynamic_mobility"
+  | "yoga_flow"
+  | "swim_session"
+  | "water_skill"
+  | "rounds"
+  | "skill_drill";
+export type ExerciseMovementPattern = "push" | "pull" | "lower" | "core" | "cardio" | "mobility" | "skill";
+export type ExerciseProgressionProfile = "load_reps" | "bodyweight_reps" | "skill_strength" | "isometric" | "cardio" | "mobility" | "swimming" | "combat" | "skill" | "none";
+export type ExerciseSafetyFlag = "no_intensity_bonus" | "no_pr" | "no_progression" | "quality_before_volume" | "aquatic_supervision" | "secure_support";
+export type ExerciseScienceTag = "balance" | "functional" | "home_friendly";
 export type GoalDifficulty = "easy" | "normal" | "hard" | "extreme";
 
 export interface ExerciseDefinition {
@@ -15,6 +35,10 @@ export interface ExerciseDefinition {
   group?: ExerciseLibraryGroup;
   loggingProfile?: ExerciseLoggingProfile;
   muscleWeights?: Partial<Record<ExerciseCategory, number>>;
+  movementPattern?: ExerciseMovementPattern;
+  progressionProfile?: ExerciseProgressionProfile;
+  safetyFlags?: ExerciseSafetyFlag[];
+  scienceTags?: ExerciseScienceTag[];
 }
 
 export interface SetEntry {
@@ -22,8 +46,11 @@ export interface SetEntry {
   weightKg?: number;
   reps?: number;
   durationSec?: number;
+  targetWorkSec?: number;
   distanceKm?: number;
   completed: boolean;
+  skipped?: boolean;
+  skippedAt?: string;
   setType?: "normal" | "warmup" | "drop" | "failure";
   rpe?: number;
   startedAt?: string;
@@ -33,6 +60,14 @@ export interface SetEntry {
   inclinePct?: number;
   resistanceLevel?: number;
   laps?: number;
+  recoverySec?: number;
+  loadPerHandKg?: number;
+  cadenceRpm?: number;
+  strokeRateSpm?: number;
+  pace500Sec?: number;
+  verticalGainM?: number;
+  packWeightKg?: number;
+  side?: "left" | "right" | "both";
 }
 
 export interface WorkoutExerciseEntry {
@@ -44,6 +79,10 @@ export interface WorkoutExerciseEntry {
   startedAt?: string;
   completedAt?: string;
   difficulty?: 1 | 2 | 3 | 4 | 5;
+  recordingProfile?: ExerciseLoggingProfile;
+  recordingProfileVersion?: 2;
+  targetRepMin?: number;
+  targetRepMax?: number;
 }
 
 export interface WorkoutRecord {
@@ -73,7 +112,19 @@ export interface WorkoutRoutine {
   name: string;
   mode?: "standard" | "circuit";
   rounds?: number;
-  exercises: Array<{ exerciseId: string; restSec: number; sets: Array<Pick<SetEntry, "weightKg" | "reps" | "durationSec" | "distanceKm" | "speedKph" | "inclinePct" | "resistanceLevel" | "laps" | "setType">> }>;
+  exercises: Array<{
+    exerciseId: string;
+    restSec: number;
+    recordingProfile?: ExerciseLoggingProfile;
+    recordingProfileVersion?: 2;
+    targetRepMin?: number;
+    targetRepMax?: number;
+    sets: Array<Pick<SetEntry,
+      "weightKg" | "reps" | "durationSec" | "targetWorkSec" | "distanceKm" | "speedKph" | "inclinePct" |
+      "resistanceLevel" | "laps" | "setType" | "recoverySec" | "loadPerHandKg" |
+      "cadenceRpm" | "strokeRateSpm" | "pace500Sec" | "verticalGainM" | "packWeightKg" | "side"
+    >>
+  }>;
 }
 
 export interface RoutePoint { lat: number; lon: number; elevation?: number; }
@@ -108,7 +159,8 @@ export interface HikeRecord {
 
 export type SupplementUnit = "mg" | "mcg" | "g" | "IU" | "capsule" | "tablet" | "serving" | "scoop" | "drop";
 
-export interface SupplementEntry { id: string; at: string; supplementId: string; amount?: number; unit?: SupplementUnit; editedAt?: string; }
+export interface SupplementEntry { id: string; at: string; supplementId: string; customLabel?: string; amount?: number; unit?: SupplementUnit; editedAt?: string; }
+export interface CustomSupplement { id: string; label: string; defaultAmount?: number; defaultUnit?: SupplementUnit; }
 export interface SupplementDay { date: string; entries: SupplementEntry[]; }
 
 export interface HydrationDay {
@@ -133,14 +185,56 @@ export interface FamilyMemberSummary {
 
 export interface WeightEntry { id: string; date: string; kg: number; }
 export interface HikeBadgePreference { hikeId: string; title?: string; hidden?: boolean; order?: number; }
+export interface FamilyProfileSharing {
+  biologicalSex: boolean;
+  supplements: boolean;
+  recentWorkouts: boolean;
+  recentHikes: boolean;
+}
 export interface ProfileData {
   heightCm?: number;
   weightEntries: WeightEntry[];
   photoId?: string;
   biologicalSex?: "female" | "male" | "other" | "prefer_not";
+  familyProfileSharing?: FamilyProfileSharing;
 }
-export interface GoalConfig { weeklyCalories: number; categorySets: Partial<Record<ExerciseCategory, number>>; difficulty?: GoalDifficulty; difficultyWeek?: string; difficultyChanges?: number; }
+export interface GoalConfig {
+  weeklyCalories: number;
+  categorySets: Partial<Record<ExerciseCategory, number>>;
+  difficulty?: GoalDifficulty;
+  difficultyWeek?: string;
+  difficultyChanges?: number;
+  personalActivityId?: "any" | "hiking" | "swimming" | "running" | "cycling" | "kickboxing" | "jump_rope";
+}
 export interface StoryRecord { id: string; ownerId: string; familyId: string; mediaId: string; createdAt: string; expiresAt: string; caption?: string; }
+
+export interface EarnedMonthlyBadge {
+  month: string;
+  earnedAt: string;
+  completed: number;
+  available: number;
+  required: number;
+  scoringVersion: 1 | 2;
+}
+
+export interface ScienceState {
+  scoringVersion: 2;
+  exerciseDefaultsVersion: 2;
+  effectiveFrom: string;
+  earnedMonthlyBadges?: EarnedMonthlyBadge[];
+}
+
+export interface WorkoutPreferences {
+  restTimerSound: boolean;
+  keepScreenAwake: boolean;
+}
+export interface NotificationPreferences {
+  goldDays: boolean;
+  badges: boolean;
+  pokes: boolean;
+  mutedPokeUids?: string[];
+  mutedPokeGroupIds?: string[];
+}
 
 export interface AppState {
   schemaVersion: 1;
@@ -153,6 +247,7 @@ export interface AppState {
   hydration: HydrationDay;
   hydrationHistory?: HydrationDay[];
   supplementHistory?: SupplementDay[];
+  customSupplements?: CustomSupplement[];
   workouts: WorkoutRecord[];
   hikes: HikeRecord[];
   activeWorkout: WorkoutRecord | null;
@@ -164,7 +259,12 @@ export interface AppState {
   goals?: GoalConfig;
   stories?: StoryRecord[];
   accentColor?: string;
+  workoutPreferences?: WorkoutPreferences;
+  notificationPreferences?: NotificationPreferences;
+  notificationDefaultsV11_1Applied?: boolean;
+  seenSocialEventIds?: string[];
   hikeBadgePreferences?: HikeBadgePreference[];
+  science?: ScienceState;
   sync?: {
     deletedWorkoutIds?: string[];
     workoutPrivacyMigrated?: boolean;

@@ -2,9 +2,9 @@
 // Firebase Web config is public client configuration, not an admin secret.
 // Authorization is enforced by Firebase Auth + Security Rules. App Check is initialized when a site key is configured.
 //
-// Keep the Firebase-provisioned auth domain while using signInWithPopup().
-// The previous v0.3.2 web.app authDomain required a matching OAuth redirect URI
-// and caused redirect_uri_mismatch before that provider-side configuration existed.
+// v0.11.3+ uses the Firebase Hosting origin as authDomain so redirect fallback
+// remains same-origin in Safari/private browsers. The Google OAuth client must
+// authorize https://YOUR_AUTH_DOMAIN/__/auth/handler once.
 window.__LOGTOGETHER_CONFIG__ = {
   mode: "firebase",
   firebase: {
@@ -16,5 +16,10 @@ window.__LOGTOGETHER_CONFIG__ = {
     messagingSenderId: "YOUR_MESSAGING_SENDER_ID"
   },
   appCheckProvider: "recaptcha-enterprise",
-  appCheckSiteKey: "YOUR_APPCHECK_SITE_KEY"
+  appCheckSiteKey: "YOUR_APPCHECK_SITE_KEY",
+  // Replaced by deploy.sh with the deployment's public Web Push VAPID key.
+  pushPublicKey: "YOUR_PUBLIC_VAPID_KEY",
+  // Optional external feedback form (Google Forms / forms.gle recommended).
+  // Leave blank until the owner creates the form; no Firebase resources are used.
+  feedbackFormUrl: ""
 };

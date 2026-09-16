@@ -114,11 +114,11 @@ async function seed() {
     });
     await setDoc(doc(db, "familyProgress/alice_2026-09-13"), {
       schemaVersion: 1, ownerId: "alice", familyId: "family-a", date: "2026-09-13",
-      calories: 420, waterMl: 1800, workoutCount: 1, clientUpdatedAt: "2026-09-13T00:00:00.000Z", updatedAt: nowTs()
+      calories: 420, waterMl: 1800, workoutCount: 1, goldDay: true, clientUpdatedAt: "2026-09-13T00:00:00.000Z", updatedAt: nowTs()
     });
     await setDoc(doc(db, "familyProgress/mallory_2026-09-13"), {
       schemaVersion: 1, ownerId: "mallory", familyId: "family-b", date: "2026-09-13",
-      calories: 900, waterMl: 2500, workoutCount: 2, clientUpdatedAt: "2026-09-13T00:00:00.000Z", updatedAt: nowTs()
+      calories: 900, waterMl: 2500, workoutCount: 2, goldDay: true, clientUpdatedAt: "2026-09-13T00:00:00.000Z", updatedAt: nowTs()
     });
     await setDoc(doc(db, "routines/r-family"), {
       ...sharedBase, ownerId: "alice", visibility: "family", name: "Family Routine"
@@ -330,7 +330,7 @@ test("member can publish and update only their own bounded family progress", asy
   const ref = doc(db, "familyProgress/bob_2026-09-13");
   await assertSucceeds(setDoc(ref, {
     schemaVersion: 1, ownerId: "bob", familyId: "family-a", date: "2026-09-13",
-    calories: 120, waterMl: 750, workoutCount: 1, clientUpdatedAt: "2026-09-13T01:00:00.000Z", updatedAt: nowTs()
+    calories: 120, waterMl: 750, workoutCount: 1, goldDay: false, clientUpdatedAt: "2026-09-13T01:00:00.000Z", updatedAt: nowTs()
   }));
   await assertSucceeds(updateDoc(ref, { calories: 150, waterMl: 1000, clientUpdatedAt: "2026-09-13T02:00:00.000Z", updatedAt: nowTs() }));
   await assertFails(updateDoc(doc(db, "familyProgress/alice_2026-09-13"), { calories: 999 }));
@@ -340,7 +340,7 @@ test("family progress cannot smuggle raw health or workout fields", async () => 
   const db = auth("bob");
   await assertFails(setDoc(doc(db, "familyProgress/bob_bad"), {
     schemaVersion: 1, ownerId: "bob", familyId: "family-a", date: "2026-09-13",
-    calories: 120, waterMl: 750, workoutCount: 1, clientUpdatedAt: "2026-09-13T01:00:00.000Z", updatedAt: nowTs(),
+    calories: 120, waterMl: 750, workoutCount: 1, goldDay: false, clientUpdatedAt: "2026-09-13T01:00:00.000Z", updatedAt: nowTs(),
     weightKg: 70, entries: [{ ml: 250 }], exercises: [{ id: "secret" }]
   }));
 });
@@ -506,6 +506,14 @@ test("member can edit family profile presentation fields only", async () => {
   }));
   await assertSucceeds(updateDoc(doc(db, "families/family-a/members/bob"), { displayName: "Robert" }));
   await assertSucceeds(updateDoc(doc(db, "families/family-a/members/bob"), { biologicalSex: "male", updatedAt: nowTs() }));
+  await assertSucceeds(updateDoc(doc(db, "families/family-a/members/bob"), {
+    profileSharing: { biologicalSex: false, supplements: true, recentWorkouts: false, recentHikes: true },
+    updatedAt: nowTs()
+  }));
+  await assertFails(updateDoc(doc(db, "families/family-a/members/bob"), {
+    profileSharing: { biologicalSex: false, supplements: true, recentWorkouts: false, recentHikes: true, extra: true },
+    updatedAt: nowTs()
+  }));
   const familyView = await assertSucceeds(getDoc(doc(auth("alice"), "families/family-a/members/bob")));
   assert.equal(familyView.data()?.biologicalSex, "male");
   await assertFails(updateDoc(doc(db, "families/family-a/members/bob"), { biologicalSex: "invalid", updatedAt: nowTs() }));

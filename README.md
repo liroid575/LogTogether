@@ -1,6 +1,6 @@
-# LogTogether — v0.1.7
+# LogTogether — v0.11.7 family testing
 
-Private-first bilingual family exercise PWA prototype. v0.1.7 is the final local UX polish pass before cloud/auth work.
+Privacy-first bilingual family exercise PWA. The current family-testing release includes Firebase Cloud sync/auth, science-informed activity recording, offline support, family progress, Web Push/Pokes, hiking, hydration and supplements. Historical release notes below are retained for development context.
 
 
 ## New in 0.1.7
@@ -45,7 +45,7 @@ Open `http://localhost:4173`.
 
 ## Main prototype areas
 
-- Home: start workout/hike, saved routines, circuit builder, weekly goals, 7-day estimated-Cal trend.
+- Home: start a guided workout or retrospectively Log activity, saved routines, circuit builder, weekly goals, and estimated-Cal trends.
 - Circuit routines: define a sequence such as 7 pull-ups → 25 push-ups → 40 squats → 60 calf raises, then repeat it for 3–4 rounds.
 - History: calendar first, all-category exercise mix, date-scoped activity history, collapsible workout → exercise → set details, optional workout photo.
 - Water: independent hydration log, 7-day hydration chart with daily goal line, individually removable entries.

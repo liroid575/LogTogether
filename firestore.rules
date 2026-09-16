@@ -243,8 +243,8 @@ service cloud.firestore {
 
     function validFamilyProgressCreate(data) {
       return signedIn()
-        && data.keys().hasAll(['schemaVersion', 'ownerId', 'familyId', 'date', 'calories', 'waterMl', 'workoutCount', 'clientUpdatedAt', 'updatedAt'])
-        && data.keys().hasOnly(['schemaVersion', 'ownerId', 'familyId', 'date', 'calories', 'waterMl', 'workoutCount', 'clientUpdatedAt', 'updatedAt'])
+        && data.keys().hasAll(['schemaVersion', 'ownerId', 'familyId', 'date', 'calories', 'waterMl', 'workoutCount', 'goldDay', 'clientUpdatedAt', 'updatedAt'])
+        && data.keys().hasOnly(['schemaVersion', 'ownerId', 'familyId', 'date', 'calories', 'waterMl', 'workoutCount', 'goldDay', 'clientUpdatedAt', 'updatedAt'])
         && data.schemaVersion == 1
         && data.ownerId == request.auth.uid
         && data.familyId is string
@@ -254,6 +254,7 @@ service cloud.firestore {
         && data.calories is int && data.calories >= 0
         && data.waterMl is int && data.waterMl >= 0
         && data.workoutCount is int && data.workoutCount >= 0
+        && data.goldDay is bool
         && data.clientUpdatedAt is string
         && data.updatedAt is timestamp;
     }
@@ -266,10 +267,11 @@ service cloud.firestore {
         && after.familyId == before.familyId
         && after.date == before.date
         && after.schemaVersion == before.schemaVersion
-        && after.diff(before).affectedKeys().hasOnly(['calories', 'waterMl', 'workoutCount', 'clientUpdatedAt', 'updatedAt'])
+        && after.diff(before).affectedKeys().hasOnly(['calories', 'waterMl', 'workoutCount', 'goldDay', 'clientUpdatedAt', 'updatedAt'])
         && after.calories is int && after.calories >= 0
         && after.waterMl is int && after.waterMl >= 0
         && after.workoutCount is int && after.workoutCount >= 0
+        && after.goldDay is bool
         && after.clientUpdatedAt is string
         && after.updatedAt is timestamp;
     }
@@ -354,17 +356,28 @@ service cloud.firestore {
       let changed = after.diff(before).affectedKeys();
       let sexValid = !after.keys().hasAny(['biologicalSex'])
         || after.biologicalSex in ['female', 'male', 'other', 'prefer_not'];
+      let sharingValid = !after.keys().hasAny(['profileSharing']) || (
+        after.profileSharing is map
+        && after.profileSharing.keys().hasAll(['biologicalSex', 'supplements', 'recentWorkouts', 'recentHikes'])
+        && after.profileSharing.keys().hasOnly(['biologicalSex', 'supplements', 'recentWorkouts', 'recentHikes'])
+        && after.profileSharing.biologicalSex is bool
+        && after.profileSharing.supplements is bool
+        && after.profileSharing.recentWorkouts is bool
+        && after.profileSharing.recentHikes is bool
+      );
       return (
-        changed.hasOnly(['displayName', 'photoPath', 'accentColor', 'biologicalSex', 'updatedAt'])
+        changed.hasOnly(['displayName', 'photoPath', 'accentColor', 'biologicalSex', 'profileSharing', 'updatedAt'])
         && sexValid
+        && sharingValid
       ) || (
         before.get('identitySeeded', false) != true
         && after.identitySeeded == true
-        && changed.hasOnly(['displayName', 'photoURL', 'biologicalSex', 'identitySeeded', 'updatedAt'])
+        && changed.hasOnly(['displayName', 'photoURL', 'biologicalSex', 'profileSharing', 'identitySeeded', 'updatedAt'])
         && after.displayName is string
         && after.displayName.size() > 0
         && after.displayName.size() <= 80
         && sexValid
+        && sharingValid
         && (!after.keys().hasAny(['photoURL']) || (after.photoURL is string && after.photoURL.size() <= 2048))
       );
     }
@@ -423,6 +436,46 @@ service cloud.firestore {
         && request.auth.uid == uid
         && exists(accessPath(uid));
       allow update, delete: if signedIn() && request.auth.uid == uid;
+
+      // Device-specific Web Push endpoints are private to their owner. Cloud
+      // Functions use Admin SDK access to deliver notifications.
+      match /pushSubscriptions/{subscriptionId} {
+        allow get, list, create, update, delete: if signedIn() && request.auth.uid == uid;
+      }
+
+      // Short private social inbox used as a fallback when Web Push is unavailable
+      // or not yet enabled. Only the recipient can read/delete these events; only
+      // trusted Cloud Functions create them via Admin SDK.
+      match /socialInbox/{eventId} {
+        allow get, list, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if false;
+      }
+    }
+
+    // Poke balances are awarded/spent only by trusted Cloud Functions. The user
+    // can read their own balance; family members cannot inspect one another's.
+    match /pokeWallets/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+
+    match /pokeRateLimits/{rateId} {
+      allow read, write: if false;
+    }
+
+    // Social notification idempotency, recipient flood windows, and developer
+    // usage counters are server-managed only. They are intentionally invisible
+    // to clients; the owner diagnostics callable returns bounded aggregate data.
+    match /pokeRecipientLimits/{recipientId} {
+      allow read, write: if false;
+    }
+
+    match /socialEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    match /developerUsage/{usageId} {
+      allow read, write: if false;
     }
 
     match /families/{familyId} {

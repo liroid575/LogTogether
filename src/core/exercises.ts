@@ -1,4 +1,4 @@
-import type { ExerciseCategory, ExerciseDefinition, ExerciseLibraryGroup, ExerciseLoggingProfile } from "./types.js";
+import type { ExerciseCategory, ExerciseDefinition, ExerciseLibraryGroup, ExerciseLoggingProfile, ExerciseMovementPattern, ExerciseProgressionProfile, ExerciseSafetyFlag, WorkoutExerciseEntry } from "./types.js";
 
 export const EXERCISES: ExerciseDefinition[] = [
   { id: "diamond_push_up", names: { en: "Diamond Push-up", "zh-TW": "鑽石伏地挺身" }, type: "reps", category: "chest" },
@@ -125,6 +125,24 @@ export const EXERCISES: ExerciseDefinition[] = [
   { id: "thoracic_rotation", names: { en: "Thoracic Rotation", "zh-TW": "胸椎旋轉" }, type: "reps", category: "mobility", group: "mobility_yoga" },
   { id: "ankle_mobility", names: { en: "Ankle Mobility", "zh-TW": "踝關節活動度" }, type: "reps", category: "mobility", group: "mobility_yoga" },
 
+  // Home / Functional — deliberately accessible, low-equipment options for family members
+  // who are newer to exercise. Balance is tracked as its own science tag/profile instead
+  // of pretending it is strength or flexibility work.
+  { id: "chair_sit_to_stand", names: { en: "Chair Sit-to-Stand", "zh-TW": "椅子坐站" }, type: "reps", category: "legs", group: "home_functional", movementPattern: "lower", scienceTags: ["functional","home_friendly"] },
+  { id: "wall_push_up", names: { en: "Wall Push-up", "zh-TW": "牆面伏地挺身" }, type: "reps", category: "chest", group: "home_functional", movementPattern: "push", scienceTags: ["functional","home_friendly"] },
+  { id: "counter_push_up", names: { en: "Counter / Incline Push-up", "zh-TW": "桌面／上斜伏地挺身" }, type: "reps", category: "chest", group: "home_functional", movementPattern: "push", scienceTags: ["functional","home_friendly"] },
+  { id: "resistance_band_row", names: { en: "Resistance-band Row", "zh-TW": "彈力帶划船" }, type: "reps", category: "back", group: "home_functional", movementPattern: "pull", scienceTags: ["functional","home_friendly"] },
+  { id: "resistance_band_chest_press", names: { en: "Resistance-band Chest Press", "zh-TW": "彈力帶胸推" }, type: "reps", category: "chest", group: "home_functional", movementPattern: "push", scienceTags: ["functional","home_friendly"] },
+  { id: "supported_calf_raise", names: { en: "Supported Calf Raise", "zh-TW": "扶持提踵" }, type: "reps", category: "legs", group: "home_functional", movementPattern: "lower", scienceTags: ["functional","home_friendly"] },
+  { id: "low_step_up", names: { en: "Low Step-up", "zh-TW": "低階踏步" }, type: "reps", category: "legs", group: "home_functional", movementPattern: "lower", scienceTags: ["functional","home_friendly"] },
+  { id: "standing_hip_abduction", names: { en: "Standing Hip Abduction", "zh-TW": "站姿髖外展" }, type: "reps", category: "legs", group: "home_functional", movementPattern: "lower", scienceTags: ["functional","home_friendly"] },
+  { id: "bird_dog", names: { en: "Bird Dog", "zh-TW": "鳥狗式" }, type: "reps", category: "core", group: "home_functional", movementPattern: "core", scienceTags: ["functional","home_friendly"] },
+  { id: "marching_in_place", names: { en: "Marching in Place", "zh-TW": "原地踏步" }, type: "duration", category: "cardio", group: "home_functional", loggingProfile: "cardio_session", movementPattern: "cardio", scienceTags: ["functional","home_friendly"] },
+  { id: "tandem_stance", names: { en: "Heel-to-Toe / Tandem Stand", "zh-TW": "前後腳直線站立" }, type: "duration", category: "mobility", group: "home_functional", loggingProfile: "balance_hold", movementPattern: "skill", progressionProfile: "mobility", scienceTags: ["balance","functional","home_friendly"] },
+  { id: "supported_single_leg_stand", names: { en: "Supported Single-leg Stand", "zh-TW": "扶持單腳站立" }, type: "duration", category: "mobility", group: "home_functional", loggingProfile: "balance_hold", movementPattern: "skill", progressionProfile: "mobility", scienceTags: ["balance","functional","home_friendly"] },
+  { id: "supported_bar_hang", names: { en: "Supported Bar Hang", "zh-TW": "腳部輔助懸垂" }, type: "duration", category: "back", group: "home_functional", loggingProfile: "isometric_sets", movementPattern: "pull", progressionProfile: "isometric", safetyFlags: ["secure_support"], scienceTags: ["functional","home_friendly"] },
+  { id: "dead_hang", names: { en: "Dead Hang", "zh-TW": "懸垂" }, type: "duration", category: "back", group: "home_functional", loggingProfile: "isometric_sets", movementPattern: "pull", progressionProfile: "isometric", safetyFlags: ["secure_support"], scienceTags: ["functional"] },
+
   // Sports / Other — swimming, lifesaving, rope work, kickboxing and common sports conditioning.
   { id: "swim_freestyle", names: { en: "Swimming — Freestyle", "zh-TW": "游泳－自由式" }, type: "distance_time", category: "cardio", group: "swimming" },
   { id: "swim_breaststroke", names: { en: "Swimming — Breaststroke", "zh-TW": "游泳－蛙式" }, type: "distance_time", category: "cardio", group: "swimming" },
@@ -164,7 +182,7 @@ const CALISTHENICS_IDS = new Set([
   "plank","side_plank","crunch","dead_bug"
 ]);
 
-export const EXERCISE_LIBRARY_GROUPS: ExerciseLibraryGroup[] = ["gym", "calisthenics", "outdoor_cardio", "mobility_yoga", "swimming", "kickboxing", "sports_other"];
+export const EXERCISE_LIBRARY_GROUPS: ExerciseLibraryGroup[] = ["home_functional", "gym", "calisthenics", "outdoor_cardio", "mobility_yoga", "swimming", "kickboxing", "sports_other"];
 
 export function exerciseLibraryGroup(exercise: ExerciseDefinition): ExerciseLibraryGroup {
   if (exercise.group) return exercise.group;
@@ -193,6 +211,11 @@ const ROUND_SESSION_IDS = new Set([
 ]);
 
 const MUSCLE_WEIGHT_OVERRIDES: Record<string, Partial<Record<ExerciseCategory, number>>> = {
+  chair_sit_to_stand:{legs:.82,core:.18}, wall_push_up:{chest:.60,arms:.20,shoulders:.10,core:.10},
+  counter_push_up:{chest:.60,arms:.20,shoulders:.10,core:.10}, resistance_band_row:{back:.68,arms:.22,shoulders:.10},
+  resistance_band_chest_press:{chest:.62,arms:.20,shoulders:.18}, supported_calf_raise:{legs:1},
+  low_step_up:{legs:.84,core:.16}, standing_hip_abduction:{legs:.88,core:.12}, bird_dog:{core:.65,back:.15,shoulders:.10,legs:.10},
+  supported_bar_hang:{back:.52,arms:.36,shoulders:.12}, dead_hang:{back:.48,arms:.40,shoulders:.12},
   barbell_bench_press:{chest:.70,arms:.18,shoulders:.12}, dumbbell_bench_press:{chest:.68,arms:.17,shoulders:.15},
   incline_dumbbell_press:{chest:.58,shoulders:.27,arms:.15}, machine_chest_press:{chest:.72,arms:.18,shoulders:.10},
   push_up:{chest:.60,arms:.20,shoulders:.10,core:.10}, diamond_push_up:{chest:.45,arms:.38,shoulders:.10,core:.07},
@@ -218,14 +241,206 @@ const MUSCLE_WEIGHT_OVERRIDES: Record<string, Partial<Record<ExerciseCategory, n
 };
 
 export function exerciseLoggingProfile(exercise: ExerciseDefinition): ExerciseLoggingProfile {
-  if (exercise.loggingProfile) return exercise.loggingProfile;
+  // Legacy v0.9 resolver. Existing records without recordingProfileVersion=2
+  // continue to use this so history/routines are never silently reinterpreted.
   if (ROUND_SESSION_IDS.has(exercise.id)) return "rounds";
   if (CARDIO_SESSION_IDS.has(exercise.id)) return "cardio_session";
   if (exercise.category === "mobility" && exercise.type === "duration") return "mobility_session";
   return "sets";
 }
 
+const SKILL_STRENGTH_IDS = new Set([
+  "archer_push_up","pseudo_planche_push_up","muscle_up","pistol_squat","shrimp_squat","handstand_push_up","dragon_flag"
+]);
+const ISOMETRIC_IDS = new Set([
+  "wall_sit","hollow_body_hold","superman_hold","plank","side_plank","handstand_hold","l_sit","v_sit","front_lever_hold","back_lever_hold","planche_hold"
+]);
+const SKILL_ISOMETRIC_IDS = new Set(["handstand_hold","l_sit","v_sit","front_lever_hold","back_lever_hold","planche_hold"]);
+const CONDITIONING_IDS = new Set(["mountain_climber","burpee","jumping_jack","jump_squat","bear_crawl","jump_rope_basic","jump_rope_single_unders","jump_rope_double_unders"]);
+const SPRINT_INTERVAL_IDS = new Set(["sprinting","stair_running"]);
+const STATIC_STRETCH_IDS = new Set([
+  "hamstring_stretch","hip_flexor_stretch","quad_stretch","calf_stretch","chest_stretch",
+  "child_pose","downward_dog","cobra_pose","pigeon_pose","warrior_one","warrior_two"
+]);
+const DYNAMIC_MOBILITY_IDS = new Set(["shoulder_mobility","cat_cow","thoracic_rotation","ankle_mobility"]);
+const NORMAL_SWIM_IDS = new Set([
+  "swim_freestyle","swim_breaststroke","swim_backstroke","swim_butterfly","swim_sidestroke","swim_elementary_backstroke"
+]);
+const WATER_SKILL_IDS = new Set([
+  "swim_head_up_freestyle","swim_head_up_breaststroke","swim_lifesaving_sidestroke","swim_rescue_tube_tow",
+  "swim_cross_chest_carry","swim_armpit_tow","swim_tired_swimmer_tow","treading_water","eggbeater_kick",
+  "surface_dive","brick_retrieval"
+]);
+const SKILL_DRILL_IDS = new Set([
+  "kickboxing_jab_cross","kickboxing_roundhouse","kickboxing_front_kick","kickboxing_knees"
+]);
+const CONTINUOUS_CARDIO_IDS = new Set([
+  "walk","run","cycling","treadmill","stationary_bike","elliptical","rowing_machine","stair_climber",
+  "hiking_cardio","trail_running","rucking","inline_skating"
+]);
+const ADVANCED_SKILL_IDS = new Set([...SKILL_STRENGTH_IDS, ...SKILL_ISOMETRIC_IDS]);
+const UNDERWATER_IDS = new Set(["surface_dive","brick_retrieval"]);
+const AQUATIC_SKILL_IDS = new Set([...WATER_SKILL_IDS]);
+
+export interface ExerciseStarterDefault {
+  sets: number;
+  reps?: number;
+  repMin?: number;
+  repMax?: number;
+  durationSec?: number;
+  minutes?: number;
+  distanceKm?: number;
+  restSec: number;
+  recoverySec?: number;
+}
+
+export function exerciseScienceLoggingProfile(exercise: ExerciseDefinition): ExerciseLoggingProfile {
+  if (exercise.loggingProfile) return exercise.loggingProfile;
+  if (exercise.id === "farmers_carry") return "loaded_carry";
+  if (CONDITIONING_IDS.has(exercise.id)) return "conditioning_intervals";
+  if (SPRINT_INTERVAL_IDS.has(exercise.id)) return "sprint_intervals";
+  if (STATIC_STRETCH_IDS.has(exercise.id)) return "static_stretch";
+  if (DYNAMIC_MOBILITY_IDS.has(exercise.id)) return "dynamic_mobility";
+  if (exercise.id === "sun_salutation") return "yoga_flow";
+  if (NORMAL_SWIM_IDS.has(exercise.id)) return "swim_session";
+  if (WATER_SKILL_IDS.has(exercise.id)) return "water_skill";
+  if (ROUND_SESSION_IDS.has(exercise.id)) return "rounds";
+  if (SKILL_DRILL_IDS.has(exercise.id)) return "skill_drill";
+  if (CONTINUOUS_CARDIO_IDS.has(exercise.id)) return "cardio_session";
+  if (ISOMETRIC_IDS.has(exercise.id)) return "isometric_sets";
+  if (SKILL_STRENGTH_IDS.has(exercise.id)) return "skill_sets";
+  return "sets";
+}
+
+export function exerciseEntryLoggingProfile(entry: Pick<WorkoutExerciseEntry,"recordingProfile"|"recordingProfileVersion">, exercise: ExerciseDefinition): ExerciseLoggingProfile {
+  return entry.recordingProfileVersion === 2 && entry.recordingProfile
+    ? entry.recordingProfile
+    : exerciseLoggingProfile(exercise);
+}
+
+export function exerciseStarterDefault(exercise: ExerciseDefinition): ExerciseStarterDefault {
+  const profile = exerciseScienceLoggingProfile(exercise);
+  const home: Record<string, ExerciseStarterDefault> = {
+    chair_sit_to_stand:{sets:2,reps:8,repMin:6,repMax:10,restSec:60},
+    wall_push_up:{sets:2,reps:8,repMin:6,repMax:12,restSec:60},
+    counter_push_up:{sets:2,reps:8,repMin:6,repMax:12,restSec:60},
+    resistance_band_row:{sets:2,reps:10,repMin:8,repMax:12,restSec:60},
+    resistance_band_chest_press:{sets:2,reps:10,repMin:8,repMax:12,restSec:60},
+    supported_calf_raise:{sets:2,reps:10,repMin:8,repMax:15,restSec:45},
+    low_step_up:{sets:2,reps:6,repMin:6,repMax:10,restSec:60},
+    standing_hip_abduction:{sets:2,reps:8,repMin:8,repMax:12,restSec:45},
+    bird_dog:{sets:2,reps:6,repMin:6,repMax:10,restSec:45},
+    marching_in_place:{sets:1,minutes:10,restSec:0},
+    tandem_stance:{sets:3,durationSec:20,restSec:30},
+    supported_single_leg_stand:{sets:3,durationSec:15,restSec:30},
+    supported_bar_hang:{sets:3,durationSec:15,restSec:60},
+    dead_hang:{sets:3,durationSec:15,restSec:60}
+  };
+  const homeStarter = home[exercise.id];
+  if (homeStarter) return { ...homeStarter };
+  if (profile === "skill_sets") return { sets: 3, reps: 4, repMin: 2, repMax: 6, restSec: 180 };
+  if (profile === "balance_hold") return { sets: 3, durationSec: 20, restSec: 30 };
+  if (profile === "isometric_sets") {
+    const skill = SKILL_ISOMETRIC_IDS.has(exercise.id);
+    return { sets: skill ? 4 : 3, durationSec: skill ? 10 : 30, restSec: skill ? 150 : 75 };
+  }
+  if (profile === "loaded_carry") return { sets: 3, distanceKm: 0.03, durationSec: 30, restSec: 90 };
+  if (profile === "conditioning_intervals") {
+    if (exercise.id === "jump_rope_double_unders") return { sets: 5, durationSec: 30, restSec: 45, recoverySec: 45 };
+    if (exercise.id === "jump_rope_basic" || exercise.id === "jump_rope_single_unders") return { sets: 5, durationSec: 60, restSec: 30, recoverySec: 30 };
+    const power = exercise.id === "jump_squat";
+    return power ? { sets: 4, reps: 5, repMin: 3, repMax: 6, restSec: 120, recoverySec: 120 }
+      : { sets: 4, durationSec: 30, restSec: 60, recoverySec: 60 };
+  }
+  if (profile === "sprint_intervals") return { sets: 4, durationSec: 20, restSec: 90, recoverySec: 90 };
+  if (profile === "static_stretch") return { sets: 2, durationSec: 30, restSec: 0 };
+  if (profile === "dynamic_mobility") return { sets: 2, reps: 8, repMin: 5, repMax: 10, restSec: 0 };
+  if (profile === "yoga_flow") return { sets: 1, minutes: 10, restSec: 0 };
+  if (profile === "swim_session") return { sets: 1, minutes: 20, restSec: 0 };
+  if (profile === "water_skill") {
+    if (UNDERWATER_IDS.has(exercise.id)) return { sets: 3, reps: 3, restSec: 90, recoverySec: 90 };
+    return { sets: 3, durationSec: 60, restSec: 90, recoverySec: 90 };
+  }
+  if (profile === "rounds") return { sets: 3, durationSec: exercise.id === "boxing_speed_bag" ? 120 : 120, restSec: 60 };
+  if (profile === "skill_drill") return { sets: 3, durationSec: 60, restSec: 45, recoverySec: 45 };
+  if (profile === "cardio_session") return { sets: 1, minutes: 20, restSec: 0 };
+
+  // Ordinary resistance. Compound lifts get slightly longer rest, while
+  // isolation movements stay near the familiar 3x10 starting experience.
+  const compound = new Set([
+    "barbell_bench_press","dumbbell_bench_press","incline_dumbbell_press","machine_chest_press","lat_pulldown",
+    "seated_cable_row","barbell_row","single_arm_row","chest_supported_row","deadlift","romanian_deadlift",
+    "back_squat","front_squat","goblet_squat","hack_squat","leg_press","hip_thrust","overhead_press","dumbbell_shoulder_press",
+    "push_up","diamond_push_up","decline_push_up","wide_push_up","pike_push_up","pull_up","chin_up","inverted_row","australian_pull_up","dips","bulgarian_split_squat","walking_lunge"
+  ]).has(exercise.id);
+  const bodyweight = exercise.type === "reps";
+  return {
+    sets: 3,
+    reps: compound ? 8 : bodyweight ? 10 : 10,
+    repMin: compound ? 6 : bodyweight ? 6 : 8,
+    repMax: compound ? 12 : bodyweight ? 15 : 15,
+    restSec: compound ? 120 : 75
+  };
+}
+
+export function exerciseMovementPattern(exercise: ExerciseDefinition): ExerciseMovementPattern {
+  if (exercise.movementPattern) return exercise.movementPattern;
+  const push = new Set([
+    "barbell_bench_press","dumbbell_bench_press","incline_dumbbell_press","machine_chest_press","chest_fly","cable_fly","pec_deck",
+    "push_up","diamond_push_up","decline_push_up","wide_push_up","archer_push_up","pseudo_planche_push_up","dips","bench_dips",
+    "overhead_press","dumbbell_shoulder_press","pike_push_up","handstand_push_up","lateral_raise","triceps_pushdown","triceps_extension","skull_crusher"
+  ]);
+  const pull = new Set([
+    "pull_up","chin_up","lat_pulldown","seated_cable_row","barbell_row","single_arm_row","chest_supported_row","inverted_row","australian_pull_up",
+    "scapular_pull_up","muscle_up","face_pull","rear_delt_fly","upright_row","biceps_curl","hammer_curl","preacher_curl"
+  ]);
+  const lower = new Set([
+    "bodyweight_squat","pistol_squat","shrimp_squat","bulgarian_split_squat","glute_bridge","bodyweight_calf_raise","walking_lunge","calf_raise",
+    "back_squat","front_squat","goblet_squat","hack_squat","leg_press","leg_extension","leg_curl","romanian_deadlift","deadlift","hip_thrust","nordic_curl_bodyweight"
+  ]);
+  if (push.has(exercise.id)) return "push";
+  if (pull.has(exercise.id)) return "pull";
+  if (lower.has(exercise.id)) return "lower";
+  if (exercise.category === "core" || ["farmers_carry"].includes(exercise.id)) return "core";
+  const profile = exerciseScienceLoggingProfile(exercise);
+  if (["static_stretch","dynamic_mobility","yoga_flow","balance_hold"].includes(profile)) return "mobility";
+  if (["skill_drill","water_skill"].includes(profile)) return "skill";
+  if (["cardio_session","conditioning_intervals","sprint_intervals","swim_session","rounds"].includes(profile)) return "cardio";
+  // Safe fallback for resistance exercises that are added to the library later
+  // (or were missed by an explicit movement-pattern list). This prevents a leg
+  // isometric such as Wall Sit from accidentally becoming a Core mission set.
+  if (exercise.category === "legs") return "lower";
+  if (exercise.category === "back") return "pull";
+  if (["chest","shoulders","arms"].includes(exercise.category)) return "push";
+  return exercise.category === "cardio" ? "cardio" : exercise.category === "mobility" ? "mobility" : "core";
+}
+
+export function exerciseProgressionProfile(exercise: ExerciseDefinition): ExerciseProgressionProfile {
+  if (exercise.progressionProfile) return exercise.progressionProfile;
+  const profile = exerciseScienceLoggingProfile(exercise);
+  if (UNDERWATER_IDS.has(exercise.id)) return "none";
+  if (profile === "swim_session") return "swimming";
+  if (profile === "rounds") return "combat";
+  if (["skill_drill","water_skill"].includes(profile)) return "skill";
+  if (["static_stretch","dynamic_mobility","yoga_flow","balance_hold"].includes(profile)) return "mobility";
+  if (["cardio_session","conditioning_intervals","sprint_intervals"].includes(profile)) return "cardio";
+  if (["skill_sets","isometric_sets"].includes(profile)) return SKILL_ISOMETRIC_IDS.has(exercise.id) || SKILL_STRENGTH_IDS.has(exercise.id) ? "skill_strength" : "isometric";
+  return exercise.type === "weight_reps" ? "load_reps" : "bodyweight_reps";
+}
+
+export function exerciseSafetyFlags(exercise: ExerciseDefinition): ExerciseSafetyFlag[] {
+  const flags: ExerciseSafetyFlag[] = [...(exercise.safetyFlags ?? [])];
+  if (UNDERWATER_IDS.has(exercise.id)) flags.push("no_intensity_bonus","no_pr","no_progression","aquatic_supervision");
+  else if (AQUATIC_SKILL_IDS.has(exercise.id)) flags.push("no_intensity_bonus","aquatic_supervision");
+  if (["jump_squat","sprinting","handstand_hold","handstand_push_up","planche_hold","front_lever_hold","back_lever_hold"].includes(exercise.id)) flags.push("quality_before_volume");
+  if (exercise.id === "kickboxing_rounds") flags.push("no_intensity_bonus");
+  return [...new Set(flags)];
+}
+
 export function exerciseMuscleWeights(exercise: ExerciseDefinition): Partial<Record<ExerciseCategory, number>> {
+  // Display-only normalized distribution. Mission scoring uses direct/secondary
+  // category credits below; this function must not be interpreted as literal
+  // physiological activation percentages.
   const source = exercise.muscleWeights ?? MUSCLE_WEIGHT_OVERRIDES[exercise.id] ?? { [exercise.category]: 1 };
   const entries = Object.entries(source).filter((entry): entry is [ExerciseCategory, number] => Number.isFinite(entry[1]) && entry[1] > 0);
   const total = entries.reduce((sum, [,value]) => sum + value, 0);
@@ -233,15 +448,34 @@ export function exerciseMuscleWeights(exercise: ExerciseDefinition): Partial<Rec
   return Object.fromEntries(entries.map(([category,value]) => [category, value / total])) as Partial<Record<ExerciseCategory, number>>;
 }
 
-export function exerciseSessionMetricFlags(exercise: ExerciseDefinition): { distance: boolean; speed: boolean; incline: boolean; resistance: boolean; laps: boolean } {
-  const swimming = exerciseLibraryGroup(exercise) === "swimming";
-  const timedWaterSkill = ["treading_water", "eggbeater_kick"].includes(exercise.id);
-  const swimDistance = swimming && !timedWaterSkill;
+export function exerciseDirectSecondaryCategories(exercise: ExerciseDefinition): { primary: ExerciseCategory; secondary: ExerciseCategory[] } {
+  const weights = exerciseMuscleWeights(exercise);
+  const ordered = Object.entries(weights)
+    .filter((entry): entry is [ExerciseCategory,number] => Number(entry[1]) > 0)
+    .sort((a,b)=>b[1]-a[1]);
+  const primary = ordered[0]?.[0] ?? exercise.category;
+  const secondary = ordered.slice(1).filter(([,weight])=>weight >= 0.10).map(([category])=>category);
+  return { primary, secondary };
+}
+
+export function exerciseSessionMetricFlags(exercise: ExerciseDefinition): {
+  distance: boolean; speed: boolean; incline: boolean; resistance: boolean; laps: boolean;
+  loadPerHand: boolean; cadence: boolean; strokeRate: boolean; pace500: boolean; vertical: boolean; packWeight: boolean;
+} {
+  const profile = exerciseScienceLoggingProfile(exercise);
+  const swimming = profile === "swim_session" || profile === "water_skill";
+  const swimDistance = swimming && !["treading_water","eggbeater_kick","surface_dive","brick_retrieval"].includes(exercise.id);
   return {
-    distance: exercise.type === "distance_time" || ["stationary_bike","elliptical","rowing_machine"].includes(exercise.id) || swimDistance,
+    distance: exercise.type === "distance_time" || ["stationary_bike","elliptical","rowing_machine"].includes(exercise.id) || swimDistance || profile === "loaded_carry" || profile === "sprint_intervals",
     speed: ["treadmill","stationary_bike","elliptical"].includes(exercise.id),
     incline: exercise.id === "treadmill",
     resistance: ["stationary_bike","elliptical","rowing_machine","stair_climber"].includes(exercise.id),
-    laps: swimDistance
+    laps: profile === "swim_session",
+    loadPerHand: exercise.id === "farmers_carry",
+    cadence: ["stationary_bike","cycling"].includes(exercise.id),
+    strokeRate: exercise.id === "rowing_machine" || profile === "swim_session",
+    pace500: exercise.id === "rowing_machine",
+    vertical: ["stair_climber","stair_running","hiking_cardio","trail_running"].includes(exercise.id),
+    packWeight: exercise.id === "rucking"
   };
 }
