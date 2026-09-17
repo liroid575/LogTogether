@@ -1,0 +1,32 @@
+# LogTogether Documentation
+
+This directory contains product, technical, setup, and historical documentation for LogTogether.
+
+## Design
+
+Current product and architecture documentation:
+
+- [Architecture](design/ARCHITECTURE.md)
+- [Authorization model](design/AUTHORIZATION_V0.2.md)
+- [Family management](design/FAMILY_MANAGEMENT_V0.3.1.md)
+- [Family progress](design/FAMILY_PROGRESS_V0.5.0.md)
+- [UX research](design/UX_RESEARCH.md)
+
+## Guides
+
+Setup and operational documentation:
+
+- [Firebase App Check](guides/APPCHECK_V0.8.2.md)
+- [Authentication setup](guides/AUTH_SETUP_V0.11.3.md)
+- [Feedback form setup](guides/FEEDBACK_FORM_SETUP_V0.11.5.md)
+- [Upgrade notes](guides/UPGRADE.md)
+
+## Releases
+
+Version-specific release notes are stored in [`releases/`](releases/).
+
+## Archive
+
+Older implementation notes, fixes, checkpoints, and development records are preserved in [`archive/`](archive/).
+
+These files are retained for project history and are not necessarily current implementation guidance.
