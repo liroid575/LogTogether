@@ -183,7 +183,10 @@ npm packages in this repository are used for development, compilation, testing, 
 
 ## Running locally
 
-A basic local run requires Node.js and npm.
+A basic local run requires **Node.js 22.x** and npm. `.node-version` declares
+the same Node major used by CI and the Firebase Functions runtime. Select it
+with your preferred version manager; changing your system-wide Node version
+is not required.
 
 Install the locked development dependencies:
 
@@ -243,11 +246,38 @@ Run the Firestore authorization suite with:
 npm run test:security
 ```
 
-The authorization tests use the Firebase Firestore Emulator and require a compatible Java runtime.
+The authorization tests use the Firebase Firestore Emulator and require **Java 21**.
+The test command explicitly selects `demo-logtogether`, matching the test fixtures.
+It does not require Firebase login, a real Firebase project, or billing.
+
+If Java 21 is installed alongside another default version, select it for this
+command only. For example, on Arch Linux:
+
+```bash
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk \
+PATH="/usr/lib/jvm/java-21-openjdk/bin:$PATH" npm run test:security
+```
 
 Some tests deliberately attempt forbidden operations. `PERMISSION_DENIED` output is therefore expected when those negative tests pass.
 
 The current suites provide useful regression and authorization coverage, but passing them should not be interpreted as a formal independent security audit.
+
+## Continuous integration
+
+Once this repository is hosted on GitHub with Actions enabled,
+[the test workflow](.github/workflows/test.yml) runs on pushes to `main`, pull
+requests, and manual dispatch. One Linux job installs the locked dependencies,
+builds the Local-mode app, runs the unit/regression suite, and runs the Firestore
+authorization suite with Node 22 and Java 21.
+
+The workflow needs no Firebase credentials or `config.local.js` and does not
+deploy the application. Actions are pinned to full commit IDs, checkout does
+not retain credentials, and the workflow has read-only repository permission.
+A 15-minute timeout and cancellation of superseded runs limit wasted runner
+time. No build artifacts or dependency caches are uploaded by this workflow.
+
+GitHub Actions usage is separate from Firebase billing; check the repository's
+Actions allowance and spending controls before enabling it for a private repository.
 
 ## Repository structure
 
