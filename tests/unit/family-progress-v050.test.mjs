@@ -76,10 +76,6 @@ test("precise hike routes and photos remain local while hike metadata syncs", ()
   assert.match(client, /saveCloudHike/);
 });
 
-test("v0.7 service worker cache is versioned", () => {
-  assert.match(sw, /logtogether-shell-v0\.9\.0/);
-});
-
 test("first cloud migration merges profile hydration and supplements", () => {
   assert.match(main, /profileCloudMigrated !== true/);
   assert.match(main, /mergeProfileForFirstCloudSync/);

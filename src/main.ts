@@ -1773,12 +1773,19 @@ class FamilyExerciseApp {
     const burst=document.createElement("div");
     burst.className="poke-sent-burst";
     burst.setAttribute("aria-hidden","true");
-    burst.innerHTML=Array.from({length:7},(_,i)=>{
+
+    Array.from({length:7},(_,i)=>{
       const angle=(Math.PI*2*i)/7;
       const dx=Math.round(Math.cos(angle)*(42+(i%3)*9));
       const dy=Math.round(Math.sin(angle)*(34+(i%2)*9));
-      return `<i style="--poke-burst-x:${dx}px;--poke-burst-y:${dy}px;animation-delay:${i*28}ms">${escapeHtml(emoji)}</i>`;
-    }).join("");
+      const particle=document.createElement("i");
+      particle.textContent=emoji;
+      particle.style.setProperty("--poke-burst-x",`${dx}px`);
+      particle.style.setProperty("--poke-burst-y",`${dy}px`);
+      particle.style.animationDelay=`${i*28}ms`;
+      burst.append(particle);
+    });
+
     document.body.append(burst);
     window.setTimeout(()=>burst.remove(),1050);
   }

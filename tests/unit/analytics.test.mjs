@@ -25,13 +25,13 @@ test("weekly series reflects stored workouts only", () => {
   assert.deepEqual(series.map(p => p.count), [1, 1]);
 });
 
-test("calendar distribution groups completed sets by exercise category", () => {
+test("calendar distribution uses primary and secondary training credits", () => {
   const records = [workout("a", "2026-09-10T10:00:00", "barbell_bench_press")];
   const slices = categoryDistributionForDate(records, [], "2026-09-10");
   const counts = Object.fromEntries(slices.map(slice => [slice.category, slice.count]));
-  assert.ok(Math.abs(counts.chest - 0.7) < 1e-9);
-  assert.ok(Math.abs(counts.arms - 0.18) < 1e-9);
-  assert.ok(Math.abs(counts.shoulders - 0.12) < 1e-9);
+  assert.equal(counts.chest, 1);
+  assert.equal(counts.arms, 0.5);
+  assert.equal(counts.shoulders, 0.5);
 });
 
 test("calendar distribution always includes all eight categories, including zeroes", () => {

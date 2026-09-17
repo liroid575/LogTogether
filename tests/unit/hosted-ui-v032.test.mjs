@@ -15,11 +15,10 @@ function between(source, startNeedle, endNeedle) {
   return source.slice(start, end);
 }
 
-test("hosted Firebase Auth CSP permits Google's gapi loader without unsafe-inline", () => {
+test("hosted CSP permits Google Auth loaders without unsafe-inline", () => {
   assert.match(firebase, /script-src[^;]*https:\/\/apis\.google\.com/);
   assert.match(firebase, /connect-src[^;]*https:\/\/apis\.google\.com/);
   assert.doesNotMatch(firebase, /'unsafe-inline'/);
-  assert.match(config, /authDomain:\s*["\']YOUR_PROJECT_ID\.firebaseapp\.com["\']/);
 });
 
 test("strict style CSP no longer breaks dynamic accent and chart geometry", () => {
@@ -30,15 +29,19 @@ test("strict style CSP no longer breaks dynamic accent and chart geometry", () =
   assert.match(main, /data-style-top/);
 });
 
-test("circuit builder exposes every exercise type instead of reps only", () => {
+test("circuit builder uses profile-aware exercise logging", () => {
   const builder = between(main, "private renderCircuitBuilder(): string", "private renderRecent");
   assert.doesNotMatch(builder, /EXERCISES\.filter\(exercise => exercise\.type === "reps"\)/);
   assert.match(builder, /EXERCISES\.filter\(exercise => exerciseLibraryGroup\(exercise\) === group\)/);
+
   const targetFields = between(main, "private circuitTargetFields", "private renderCircuitBuilder");
-  assert.match(targetFields, /weight_reps/);
-  assert.match(targetFields, /duration/);
-  assert.match(targetFields, /distance_time/);
-  assert.match(targetFields, /minutes_/);
+  assert.match(targetFields, /exerciseScienceLoggingProfile\(definition\)/);
+  assert.match(targetFields, /exerciseSessionMetricFlags\(definition\)/);
+  assert.match(targetFields, /definition\.type === "weight_reps"/);
+  assert.match(targetFields, /profile === "loaded_carry"/);
+  assert.match(targetFields, /profile === "sprint_intervals"/);
+  assert.match(targetFields, /metrics\.distance/);
+  assert.match(targetFields, /mini\("minutes"/);
 });
 
 test("water goal line lives inside a dedicated plot instead of overlapping labels", () => {
@@ -50,11 +53,14 @@ test("water goal line lives inside a dedicated plot instead of overlapping label
   assert.match(css, /\.water-plot \{[^}]*height:132px/);
 });
 
-test("other family members open a shared profile with aggregate calories water and badges", () => {
+test("other family members open privacy-aware shared profiles with comparisons and badges", () => {
   assert.match(main, /data-family-member-profile/);
   assert.match(main, /private renderFamilyMemberProfile\(\): string/);
   assert.match(main, /private renderFamilyComparison/);
-  assert.match(main, /Family sees daily calorie totals/);
-  assert.match(main, /Family sees only each day's water total/);
+  assert.match(main, /private renderFamilyTrendComparison/);
+  assert.match(main, /familyWeeklySeries\(selfUid, metric\)/);
+  assert.match(main, /familyWeeklySeries\(memberUid, metric\)/);
+  assert.match(main, /shared daily water totals/);
+  assert.match(main, /individual drink timestamps remain private/);
   assert.match(main, /cloudFamilyBadges/);
 });

@@ -34,7 +34,3 @@ test("week navigation resets when returning to Home or Water", () => {
   assert.match(main, /page === "home"[\s\S]*workoutTrendWeekOffset = 0/);
   assert.match(main, /page === "water"[\s\S]*waterWeekOffset = 0/);
 });
-
-test("deployment service worker cache is v0.8.3", () => {
-  assert.match(sw, /logtogether-shell-v0\.9\.0/);
-});

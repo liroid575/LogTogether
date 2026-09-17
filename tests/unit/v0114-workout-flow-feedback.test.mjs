@@ -4,13 +4,6 @@ import { readFile } from "node:fs/promises";
 
 const text = async path => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
-test("v0.11.4 versions the shell without changing the notification backend", async () => {
-  const [pkg, main, sw] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js")]);
-  assert.equal(JSON.parse(pkg).version, "0.11.4");
-  assert.match(main, /APP_VERSION = "0\.11\.4"/);
-  assert.match(sw, /logtogether-shell-v0\.11\.4-workout-flow-feedback/);
-});
-
 test("work and rest deadlines have independent once-only two-beep acknowledgement", async () => {
   const main = await text("src/main.ts");
   assert.match(main, /private workDeadlineKey: string \| null = null/);

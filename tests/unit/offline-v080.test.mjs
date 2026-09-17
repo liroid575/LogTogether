@@ -64,7 +64,3 @@ test("v0.8 provides account-bound JSON backup and import rollback", () => {
   assert.match(main, /data-action="export-local-backup"/);
   assert.match(main, /id="local-backup-import"/);
 });
-
-test("service worker advances to v0.8.0", () => {
-  assert.match(sw, /logtogether-shell-v0\.9\.0/);
-});

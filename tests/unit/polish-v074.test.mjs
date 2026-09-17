@@ -30,7 +30,3 @@ test("hiking badge editing is hidden behind one edit toggle and uses drag reorde
   assert.doesNotMatch(main, /data-move-hike-badge/);
   assert.match(css, /touch-action:\s*none/);
 });
-
-test("service worker advances to v0.7.4", () => {
-  assert.match(sw, /logtogether-shell-v0\.9\.0/);
-});

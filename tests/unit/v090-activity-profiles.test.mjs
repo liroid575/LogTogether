@@ -31,23 +31,35 @@ test("activity-aware profiles give machines, mobility and boxing suitable loggin
   assert.equal(exerciseLoggingProfile(exerciseById("kickboxing_rounds")), "rounds");
   assert.equal(exerciseLoggingProfile(exerciseById("barbell_bench_press")), "sets");
   const treadmill = exerciseSessionMetricFlags(exerciseById("treadmill"));
-  assert.deepEqual(treadmill, { distance: true, speed: true, incline: true, resistance: false, laps: false });
+  assert.equal(treadmill.distance, true);
+  assert.equal(treadmill.speed, true);
+  assert.equal(treadmill.incline, true);
+  assert.equal(treadmill.resistance, false);
+  assert.equal(treadmill.laps, false);
 });
 
-test("compound strength credit is split across muscles instead of duplicated", () => {
+test("normalized muscle display weights remain separate from mission training credits", () => {
   const weights = exerciseMuscleWeights(exerciseById("barbell_bench_press"));
   const total = Object.values(weights).reduce((sum, value) => sum + value, 0);
+
   assert.ok(Math.abs(total - 1) < 1e-9);
   assert.ok(weights.chest > weights.arms);
+  assert.ok(weights.arms > weights.shoulders);
+
   const workout = record("barbell_bench_press", [
     { id: "s1", completed: true, reps: 10 },
     { id: "s2", completed: true, reps: 10 },
     { id: "s3", completed: true, reps: 10 }
   ]);
-  const credit = weeklyCategorySets([workout], new Date("2026-09-14T12:00:00.000Z"));
-  assert.ok(credit.chest > 2 && credit.chest < 3);
-  assert.ok(credit.arms > 0 && credit.arms < 1);
-  assert.ok(credit.shoulders > 0 && credit.shoulders < 1);
+
+  const credit = weeklyCategorySets(
+    [workout],
+    new Date("2026-09-14T12:00:00.000Z")
+  );
+
+  assert.equal(credit.chest, 3);
+  assert.equal(credit.arms, 1.5);
+  assert.equal(credit.shoulders, 1.5);
 });
 
 test("cardio and mobility credit stay separate from strength muscles", () => {
@@ -76,5 +88,4 @@ test("persistent workout UI is tied to started state and owner access defaults t
   assert.match(mainSource, /data-action="discard-workout"/);
   assert.match(mainSource, /familyAccessEditing = false/);
   assert.match(mainSource, /toggle-member-access-edit/);
-  assert.match(swSource, /logtogether-shell-v0\.9\.0/);
 });

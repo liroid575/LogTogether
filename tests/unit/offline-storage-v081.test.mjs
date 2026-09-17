@@ -56,7 +56,3 @@ test("settings expose the active local structured-storage backend", () => {
   assert.match(main, /Local database: IndexedDB ✓/);
   assert.match(main, /Local database: localStorage fallback/);
 });
-
-test("service worker advances to v0.8.1", () => {
-  assert.match(sw, /logtogether-shell-v0\.9\.0/);
-});

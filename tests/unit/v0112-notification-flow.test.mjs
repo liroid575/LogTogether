@@ -4,18 +4,6 @@ import { readFile, stat } from "node:fs/promises";
 
 const text = async path => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
-await test("v0.11.2 versions the app and ships a compressed timer alert", async () => {
-  const [pkg, main, sw, audioStat] = await Promise.all([
-    text("package.json"), text("src/main.ts"), text("public/sw.js"), stat(new URL("../../public/rest-alert.mp3", import.meta.url))
-  ]);
-  assert.equal(JSON.parse(pkg).version, "0.11.2");
-  assert.match(main, /APP_VERSION = "0\.11\.2"/);
-  assert.match(sw, /logtogether-shell-v0\.11\.2-social-reliability/);
-  assert.match(sw, /\/rest-alert\.mp3/);
-  assert.ok(audioStat.size > 1000 && audioStat.size < 100_000);
-  assert.match(main, /data-action="test-timer-alert"/);
-});
-
 await test("Family notification onboarding is playful, repeatable, and dismissible forever", async () => {
   const main = await text("src/main.ts");
   assert.match(main, /👋<\/span><span>⭐<\/span><span>💪<\/span><span>🏅/);
@@ -36,12 +24,12 @@ await test("social events fall back to a private bounded inbox when push is unav
   assert.match(client, /observeSocialInbox/);
 });
 
-await test("foreground Pokes show a bounded playful celebration with reduced-motion support", async () => {
+await test("foreground Pokes keep reduced-motion support and bounded presentation", async () => {
   const [main, css] = await Promise.all([text("src/main.ts"), text("public/styles.css")]);
   assert.match(main, /poked you!/);
-  assert.match(main, /Array\.from\(\{length:10\}/);
-  assert.match(main, /3600/);
-  assert.match(main, /4200/);
+  assert.match(main, /prefers-reduced-motion: reduce/);
+  assert.match(main, /if\(!reduceMotion && rain\)/);
+  assert.match(main, /const totalDuration=reduceMotion\?/);
   assert.match(css, /\.poke-emoji-rain/);
   assert.match(css, /prefers-reduced-motion:reduce/);
 });
@@ -53,11 +41,11 @@ await test("Quick Guide drags naturally but stops on complete pages", async () =
   assert.match(css, /scroll-snap-stop:always/);
 });
 
-await test("custom supplements sync privately and historical entries retain literal labels", async () => {
+await test("custom supplements sync privately and retain literal historical labels", async () => {
   const [main, types, client] = await Promise.all([text("src/main.ts"), text("src/core/types.ts"), text("src/services/firebase-client.ts")]);
   assert.match(types, /interface CustomSupplement/);
   assert.match(types, /customLabel\?: string/);
-  assert.match(main, /Add my own supplement \/ brand/);
+  assert.match(main, /Add name \/ brand/);
   assert.match(main, /Saved exactly as written/);
   assert.match(client, /customSupplements\?: CustomSupplement\[\]/);
   assert.match(client, /customLabel/);

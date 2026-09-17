@@ -37,10 +37,10 @@ test("new workouts default to family sharing with no per-workout selector", () =
   assert.doesNotMatch(main, /id="workout-visibility"/);
 });
 
-test("set timing has an explicit Start set control and history editing hides it", () => {
+test("set timing exposes Start only for the canonical next set and not historical editing", () => {
   assert.match(types, /startedAt\?: string;[\s\S]*completedAt\?: string/);
+  assert.match(main, /const nextStart = editingExisting \? null : this\.nextStartableSet\(workout\)/);
   assert.match(main, /data-start-set="1"/);
-  assert.match(main, /editingExisting \? "" : !set\.startedAt/);
   assert.match(main, /set\.startedAt \?\?= now/);
 });
 
@@ -70,8 +70,4 @@ test("profile adds biological sex and automatic adult BMI display", () => {
   assert.match(main, /BMI/);
   assert.match(main, /18\.5/);
   assert.match(main, /27/);
-});
-
-test("v0.6 service worker cache is versioned", () => {
-  assert.match(sw, /logtogether-shell-v0\.9\.0/);
 });

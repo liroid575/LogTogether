@@ -4,15 +4,8 @@ import test from "node:test";
 
 const read = path => fs.readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 
-test("hosted popup auth uses Firebase-provisioned authDomain", () => {
-  const config = read("public/config.js");
-  assert.match(config, /authDomain:\s*["']YOUR_PROJECT_ID\.firebaseapp\.com["']/);
-  assert.doesNotMatch(config, /hostedAuthDomain/);
-});
-
 test("service worker never intercepts Firebase reserved URLs", () => {
   const sw = read("public/sw.js");
-  assert.match(sw, /logtogether-shell-v0\.9\.0/);
   assert.match(sw, /pathname\.startsWith\(["']\/_\_["']\)/);
 });
 

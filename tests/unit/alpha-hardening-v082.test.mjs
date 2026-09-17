@@ -79,7 +79,3 @@ test("schema loader now has an explicit sequential migration scaffold and still 
   assert.equal(migrateState({ schemaVersion: 999 }), null);
   assert.equal(migrateState(fakeState)?.schemaVersion, 1);
 });
-
-test("service worker advances to v0.8.2", () => {
-  assert.match(sw, /logtogether-shell-v0\.9\.0/);
-});

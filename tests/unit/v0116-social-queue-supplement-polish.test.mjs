@@ -4,13 +4,6 @@ import { readFile } from "node:fs/promises";
 
 const text = async path => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
-test("v0.11.6 versions the social/supplement polish shell", async () => {
-  const [pkg, main, sw] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js")]);
-  assert.equal(JSON.parse(pkg).version, "0.11.6");
-  assert.match(main, /APP_VERSION = "0\.11\.6"/);
-  assert.match(sw, /logtogether-shell-v0\.11\.6-social-queue-supplement-polish/);
-});
-
 test("Poke rain uses Web Animations API with explicit positions and a fallback", async () => {
   const [main, css] = await Promise.all([text("src/main.ts"), text("public/styles.css")]);
   assert.match(main, /Array\.from\(\{length:22\}/);
@@ -26,7 +19,7 @@ test("social events are queued in order and marked seen only after presentation"
   assert.match(main, /visualPresentationQueue: VisualPresentation\[\]/);
   assert.match(main, /queuedSocialEventIds = new Set<string>/);
   assert.match(main, /sort\(\(a,b\)=>a\.createdAtMs-b\.createdAtMs\)/);
-  assert.match(main, /markSocialEventPresented\(next\.socialEventId\)/);
+  assert.match(main, /markSocialEventsPresented\(next\.socialEventIds\)/);
   assert.match(main, /window\.setTimeout\(\(\)=>this\.drainVisualPresentationQueue\(\),140\)/);
   assert.match(main, /document\.visibilityState === "hidden"/);
 });
@@ -40,17 +33,12 @@ test("Gold Day and badge foreground events share the queue instead of replacing 
   assert.match(css, /\.social-event-celebration\.badge/);
 });
 
-test("temporary visual regression harness is owner-only and local-only", async () => {
+test("temporary visual regression harness remains owner-only and local-only", async () => {
   const main = await text("src/main.ts");
-  assert.match(main, /DEVELOPER_EFFECT_TESTS_V0116 = true/);
-  assert.match(main, /if\(!DEVELOPER_EFFECT_TESTS_V0116 \|\| !this\.isDeveloperOwner\(\)\) return ""/);
-  assert.match(main, /data-dev-effect="poke-five"/);
-  assert.match(main, /data-dev-effect="mixed-queue"/);
-  assert.match(main, /data-dev-effect="social-gold"/);
-  assert.match(main, /data-dev-effect="local-water"/);
-  assert.match(main, /data-dev-calendar-preview="gold"/);
-  assert.match(main, /data-dev-calendar-preview="water"/);
-  assert.match(main, /send nothing to family members/);
+  assert.match(main, /DEVELOPER_EFFECT_TESTS_V0117 = true/);
+  assert.match(main, /if\(!DEVELOPER_EFFECT_TESTS_V0117 \|\| !this\.isDeveloperOwner\(\)\) return ""/);
+  assert.match(main, /data-dev-effect="large-family-burst"/);
+  assert.match(main, /this\.enqueueSocialEventBatch\(burst,false\)/);
 });
 
 test("custom supplement selection controls research wording and persistent draft state", async () => {

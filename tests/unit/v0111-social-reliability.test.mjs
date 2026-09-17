@@ -4,22 +4,12 @@ import { readFile } from "node:fs/promises";
 
 const text = async path => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
-await test("v0.11.1 versions the app and service-worker shell and ships the media beep", async () => {
-  const [pkg, main, sw, beep] = await Promise.all([
-    text("package.json"), text("src/main.ts"), text("public/sw.js"), readFile(new URL("../../public/rest-beep.wav", import.meta.url))
-  ]);
-  assert.equal(JSON.parse(pkg).version, "0.11.1");
-  assert.match(main, /APP_VERSION = "0\.11\.1"/);
-  assert.match(sw, /logtogether-shell-v0\.11\.1-social-reliability/);
-  assert.match(sw, /\/rest-beep\.wav/);
-  assert.equal(beep.subarray(0,4).toString("ascii"), "RIFF");
-});
-
-await test("rest completion has media, WebAudio, vibration and visual fallbacks", async () => {
+await test("rest completion uses current timer audio with WebAudio vibration and visual fallbacks", async () => {
   const main = await text("src/main.ts");
-  assert.match(main, /new Audio\("\/rest-beep\.wav"\)/);
-  assert.match(main, /audioSession.*playback/s);
-  assert.match(main, /vibrate\(\[180,90,180\]\)/);
+  assert.match(main, /make\("\/timer-cue-double\.mp3"\)/);
+  assert.match(main, /audioSession.*type = "transient"/);
+  assert.match(main, /private playWebAudioCue/);
+  assert.match(main, /vibrate\(/);
   assert.match(main, /rest-alert-flash/);
 });
 

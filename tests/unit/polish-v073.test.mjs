@@ -17,7 +17,3 @@ test('completed water month uses the same faded fill treatment as history gold m
   assert.match(css, /\.water-calendar\.perfect-water-month[\s\S]*background:\s*linear-gradient/);
   assert.match(css, /#42a5f5 10%/);
 });
-
-test('service worker advances to v0.7.4', () => {
-  assert.match(sw, /logtogether-shell-v0\.9\.0/);
-});

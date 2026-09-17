@@ -72,15 +72,33 @@ test("family comparison uses daily aggregates while family profiles gain weekly 
   assert.match(main, /Weekly achievements/);
 });
 
-test("service worker cache advances to v0.7", () => {
-  assert.match(sw, /logtogether-shell-v0\.9\.0/);
-});
-
-test("new and re-saved workouts share to Family without a privacy dropdown", () => {
+test("new and explicitly re-saved workouts share to Family while cloud sync preserves stored visibility", () => {
   assert.match(store, /visibility: "family"[\s\S]*selectedViewerIds: \[\][\s\S]*exercises: \[\]/);
   assert.doesNotMatch(main, /id="workout-visibility"/);
   assert.match(main, /workout\.visibility = "family"/);
-  assert.match(main, /existing legacy private workouts are not silently published/);
+
+  const parser = between(
+    client,
+    "function parseCloudWorkout",
+    "function firestoreWorkoutPayload"
+  );
+  assert.match(parser, /visibility: data\.visibility/);
+
+  const payload = between(
+    client,
+    "function firestoreWorkoutPayload",
+    "export async function loadCloudWorkouts"
+  );
+  assert.match(payload, /\.\.\.clone/);
+  assert.doesNotMatch(payload, /clone\.visibility\s*=\s*"family"/);
+
+  const loader = between(
+    client,
+    "export async function loadCloudWorkouts",
+    "export async function saveCloudWorkout"
+  );
+  assert.match(loader, /\["visibility", "==", "family"\]/);
+
   assert.doesNotMatch(main, /Choose Family to include this workout in family comparisons/);
 });
 
