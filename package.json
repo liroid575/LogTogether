@@ -11,7 +11,7 @@
     "test:security": "firebase emulators:exec --only firestore \"node --test tests/security/*.test.mjs\"",
     "emulators": "firebase emulators:start --only firestore",
     "deploy:preview": "firebase hosting:channel:deploy preview",
-    "deploy": "firebase deploy --project YOUR_PROJECT_ID --only hosting,firestore:rules,firestore:indexes,functions --force",
+    "deploy": "firebase deploy --only hosting,firestore:rules,firestore:indexes,functions --force",
     "clean:legacy": "bash scripts/cleanup-legacy-snapshots.sh"
   },
   "devDependencies": {

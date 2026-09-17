@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
@@ -57,8 +58,15 @@ test("redirect fallback is persisted and consumed explicitly", async () => {
   assert.match(main, /PENDING_INVITE_SESSION_KEY/);
 });
 
-test("redirect fallback uses the Firebase Hosting origin", async () => {
+test("tracked config does not hardcode a Firebase Hosting origin", async () => {
   const config = await text("public/config.js");
-  assert.match(config, /authDomain: "YOUR_PROJECT_ID\.web\.app"/);
-  assert.match(config, /https:\/\/YOUR_PROJECT_ID\.web\.app\/__\/auth\/handler/);
+  assert.match(config, /mode:\s*"demo"/);
+  assert.doesNotMatch(config, /YOUR_PROJECT_ID\.web\.app/);
+
+  const exampleConfig = fs.readFileSync(
+    new URL("../../config.example.js", import.meta.url),
+    "utf8"
+  );
+  assert.match(exampleConfig, /authDomain:\s*"YOUR_AUTH_DOMAIN"/);
+  assert.match(exampleConfig, /https:\/\/YOUR_AUTH_DOMAIN\/__\/auth\/handler/);
 });

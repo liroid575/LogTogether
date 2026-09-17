@@ -7,3 +7,6 @@ coverage/
 dist/
 
 firestore-debug.log*
+
+# Machine-local LogTogether runtime configuration
+/config.local.js

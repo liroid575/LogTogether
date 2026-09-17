@@ -63,8 +63,29 @@ async function activeFamilyMembers(familyId) {
   const snapshot = await db.collection("families").doc(familyId).collection("members").where("status","==","active").get();
   return snapshot.docs.map(doc => ({uid:doc.id,...doc.data()}));
 }
+function vapidSubject() {
+  const environmentProjectId =
+    process.env.GCLOUD_PROJECT ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    "";
+
+  if (environmentProjectId) {
+    return `https://${environmentProjectId}.web.app/`;
+  }
+
+  try {
+    const firebaseConfig = JSON.parse(process.env.FIREBASE_CONFIG || "{}");
+    if (typeof firebaseConfig.projectId === "string" && firebaseConfig.projectId.trim()) {
+      return `https://${firebaseConfig.projectId.trim()}.web.app/`;
+    }
+  } catch {}
+
+  // Valid URL fallback for non-Firebase test environments.
+  return "https://firebase.google.com/";
+}
+
 function configureWebPush() {
-  webpush.setVapidDetails("https://YOUR_AUTH_DOMAIN/", VAPID_PUBLIC.value(), VAPID_PRIVATE.value());
+  webpush.setVapidDetails(vapidSubject(), VAPID_PUBLIC.value(), VAPID_PRIVATE.value());
 }
 async function recordUsage(familyId, values) {
   if (!familyId) return;

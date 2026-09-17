@@ -31,13 +31,22 @@ const fakeState = {
   sync: { deletedWorkoutIds: [], deletedHikeIds: [] }
 };
 
-test("v0.8.2 prepares App Check before Firebase services and keeps enforcement external", () => {
+test("v0.8.2 keeps App Check initialization ordered while tracked config stays safe for source checkouts", () => {
   assert.match(firebaseClient, /firebase-app-check\.js/);
   assert.match(firebaseClient, /ReCaptchaEnterpriseProvider/);
   assert.match(firebaseClient, /isTokenAutoRefreshEnabled:\s*true/);
   assert.match(firebaseClient, /await ensureAppCheck\(app\)/);
   assert.match(config, /appCheckProvider:\s*"recaptcha-enterprise"/);
-  assert.match(config, /appCheckSiteKey:\s*"YOUR_APPCHECK_SITE_KEY"/);
+  assert.match(config, /mode:\s*"demo"/);
+  assert.match(config, /firebase:\s*null/);
+  assert.match(config, /appCheckSiteKey:\s*""/);
+
+  const exampleConfig = fs.readFileSync(
+    new URL("../../config.example.js", import.meta.url),
+    "utf8"
+  );
+  assert.match(exampleConfig, /appCheckProvider:\s*"recaptcha-enterprise"/);
+  assert.match(exampleConfig, /appCheckSiteKey:\s*""/);
   assert.match(firebaseJson, /https:\/\/www\.google\.com/);
   assert.match(firebaseJson, /https:\/\/recaptchaenterprise\.googleapis\.com/);
 });
