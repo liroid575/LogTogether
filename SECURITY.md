@@ -1,27 +1,110 @@
-# Security model
+# Security
 
-## Principles
+## Current status
 
-1. **Deny by default.** Unknown Firestore paths are explicitly denied.
-2. **Server-side authorization.** UI hiding is never treated as a security boundary.
-3. **Ownership is immutable.** A record owner cannot be changed by editing a document.
-4. **Family membership is not blanket access.** Records are `private`, `family`, or `selected`.
-5. **Sensitive categories are separated.** Hydration/body/diet data must not share a document with a family-visible activity summary because Firestore authorizes whole documents.
-6. **No analytics or ad SDKs.** None are installed.
-7. **No admin credentials in the browser.** Firebase service-account keys must never enter this repository or `config.js`.
-8. **Cloud writes stay disabled until access bootstrap/invitation tests pass.** This is intentional in milestone 0.1.
+LogTogether is currently a **family-testing alpha**.
 
-## Current milestone
+Firebase Authentication, Firestore synchronization, family access controls, group-scoped sharing, Cloud Functions, notifications, and social features are being exercised in a development environment.
 
-The UI runs in local demo mode. `firestore.rules` and emulator tests define the intended authorization boundary, but production Google sign-in/invitation claiming is not enabled yet.
+The project is not yet presented as a public production service.
 
-## Before production
+Passing automated tests is a release requirement, but those tests should not be interpreted as a formal independent security audit.
 
-- Run `npm run test:security` and require all tests to pass.
-- Implement and test the invitation claim flow.
-- Enable Google Authentication only.
-- Enable Firebase App Check with reCAPTCHA Enterprise after observing metrics, then enforce it.
-- Use a separate Firebase development project and production project.
-- Review CSP after Google sign-in is enabled; do not weaken it with `unsafe-eval`.
-- Test account removal/export and backup restore.
-- Never deploy rules containing `allow read, write: if true` or broad `request.auth != null` access.
+## Security principles
+
+### Deny by default
+
+Unknown Firestore collections and unsupported access paths are denied rather than implicitly trusted.
+
+### Server-side authorization
+
+UI controls are not security boundaries.
+
+Firestore Security Rules and server-side Cloud Function checks determine whether an authenticated user may read or modify Cloud data.
+
+Hiding a button or page in the browser is never treated as sufficient authorization.
+
+### Immutable security identity
+
+Ownership and family identity cannot be transferred merely by editing a stored record.
+
+Authorization tests cover attempts to:
+
+- change record ownership;
+- change family identity;
+- edit another member's records;
+- reactivate revoked access;
+- promote privileges;
+- bypass invitation rules.
+
+### Family membership is not blanket access
+
+Being part of a family does not automatically expose every record.
+
+Shared resources are constrained by:
+
+- family identity;
+- active membership;
+- visibility;
+- group membership where applicable;
+- ownership;
+- explicit sharing rules.
+
+Revoked members lose access to family-visible resources.
+
+### Sensitive data is separated
+
+Records with different privacy requirements are kept separate rather than combined into one broadly readable document.
+
+Examples include:
+
+- account settings;
+- body metrics;
+- exact hydration records;
+- exact supplement entries;
+- private workout records;
+- precise hiking route data;
+- local media.
+
+Family-facing features use explicitly shared records or bounded aggregate summaries where appropriate.
+
+For example, family progress can expose limited weekly or daily totals without exposing all of the underlying private records used to calculate them.
+
+### Local media and precise route data
+
+Current workout-photo storage and precise GPX route data remain device-local.
+
+Cloud hiking synchronization uses limited metadata rather than automatically uploading the original precise route.
+
+Cloud-hosted private media should not be enabled until its authorization, retention, deletion, and access model have been separately reviewed and tested.
+
+### Browser configuration and secrets
+
+Firebase browser configuration is client-visible by design.
+
+A Firebase web API key or project identifier in browser configuration must not be treated as a secret or authorization mechanism.
+
+The following must never be committed to the repository:
+
+- Firebase service-account credentials;
+- private VAPID keys;
+- administrative credentials;
+- private API tokens;
+- personal family-testing data;
+- exported authentication credentials;
+- other server-side secrets.
+
+Private server material should use the deployment platform's supported secret-management mechanism.
+
+### App Check
+
+Firebase App Check is an abuse-reduction mechanism, not the primary authorization boundary.
+
+Authentication, Firestore Rules, server-side validation, API restrictions, quotas, and monitoring remain necessary even when App Check is enabled.
+
+## Automated tests
+
+The normal build and regression suite is:
+
+```bash
+npm test
