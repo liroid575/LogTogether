@@ -5,7 +5,7 @@ This checkpoint fixes issues revealed by the first Firebase Hosting + iPhone PWA
 ## Changes
 
 - Firebase Hosting CSP now permits Google's `apis.google.com` loader used by Firebase federated auth.
-- On the stable `YOUR_AUTH_DOMAIN` origin, Firebase Auth uses that same Hosting domain as `authDomain`; localhost retains the existing `firebaseapp.com` auth domain.
+- On the stable `YOUR_PROJECT_ID.web.app` origin, Firebase Auth uses that same Hosting domain as `authDomain`; localhost retains the existing `firebaseapp.com` auth domain.
 - No `unsafe-inline` is added to CSP.
 - Dynamic UI geometry/colors no longer depend on HTML `style="..."` attributes. The app applies specific CSS properties after render instead, preserving strict CSP.
 - Accent preset circles render their colors again.

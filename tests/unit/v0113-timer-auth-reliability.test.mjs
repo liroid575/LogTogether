@@ -61,7 +61,8 @@ test("redirect fallback is persisted and consumed explicitly", async () => {
 test("tracked config does not hardcode a Firebase Hosting origin", async () => {
   const config = await text("public/config.js");
   assert.match(config, /mode:\s*"demo"/);
-  assert.doesNotMatch(config, /YOUR_PROJECT_ID\.web\.app/);
+  assert.match(config, /firebase:\s*null/);
+  assert.doesNotMatch(config, /[a-z0-9-]+\.(?:web\.app|firebaseapp\.com)/i);
 
   const exampleConfig = fs.readFileSync(
     new URL("../../config.example.js", import.meta.url),

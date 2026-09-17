@@ -10,3 +10,21 @@ firestore-debug.log*
 
 # Machine-local LogTogether runtime configuration
 /config.local.js
+
+# Local deployment settings, credentials and private exports
+.firebaserc
+.env
+.env.*
+!.env.example
+.secret.local
+*.pem
+*.key
+*-firebase-adminsdk-*.json
+*service-account*.json
+*serviceAccount*.json
+*.log
+/backups/
+/exports/
+*.gpx
+*.fit
+*.tcx

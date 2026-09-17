@@ -4,12 +4,12 @@ This patch fixes two hosting-only regressions found during iPhone/PWA testing.
 
 ## Auth
 
-v0.3.2 changed `authDomain` to `YOUR_AUTH_DOMAIN` without also registering
-`https://YOUR_AUTH_DOMAIN/__/auth/handler` in the Google OAuth client.
+v0.3.2 changed `authDomain` to `YOUR_PROJECT_ID.web.app` without also registering
+`https://YOUR_PROJECT_ID.web.app/__/auth/handler` in the Google OAuth client.
 Google therefore rejected the popup with `redirect_uri_mismatch`.
 
 v0.3.3 keeps the existing `signInWithPopup()` flow and uses Firebase's provisioned
-`YOUR_AUTH_DOMAIN` auth domain, whose redirect handler is already wired
+`YOUR_PROJECT_ID.firebaseapp.com` auth domain, whose redirect handler is already wired
 for the Firebase project. This avoids adding another OAuth configuration surface while
 we are still on the development Hosting domain.
 

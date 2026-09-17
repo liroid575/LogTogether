@@ -81,7 +81,7 @@ Small family-testing patch focused on foreground social feedback and supplement 
 - Added timestamp-based deadline recovery when returning from another app.
 - Reworked Firebase Auth initialization with IndexedDB/local/session persistence fallbacks.
 - Popup sign-in now resolves the returned account/membership explicitly; redirect fallback is completed explicitly on return.
-- Changed Firebase authDomain to the same Hosting origin (`YOUR_AUTH_DOMAIN`) for modern Safari/private-browser redirect compatibility.
+- Changed Firebase authDomain to the same Hosting origin (`YOUR_PROJECT_ID.web.app`) for modern Safari/private-browser redirect compatibility.
 - Preserved pending invite codes across redirects and added visible connection/error states.
 - Bumped the PWA shell cache to `logtogether-shell-v0.11.3-timer-auth-reliability`.
 - Hosting-only deployment; no Firestore/Functions changes.
