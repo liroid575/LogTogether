@@ -1,6 +1,6 @@
 import { completedActiveSeconds, hasRecordedWork, goalsForWeek } from "./training.js";
 import { exerciseById, exerciseDirectSecondaryCategories, exerciseEntryLoggingProfile, exerciseLibraryGroup, exerciseLoggingProfile, exerciseMovementPattern, exerciseMuscleWeights, exerciseSafetyFlags } from "./exercises.js";
-import type { ExerciseCategory, ExerciseDefinition, GoalConfig, GoalDifficulty, HikeRecord, HydrationDay, WorkoutRecord } from "./types.js";
+import type { ExerciseCategory, ExerciseDefinition, GoalConfig, GoalDifficulty, HikeRecord, HydrationDay, PersonalActivityId, WorkoutRecord } from "./types.js";
 
 export interface SeriesPoint { key: string; label: string; count: number; sublabel?: string; }
 export interface CategorySlice { category: ExerciseDefinition["category"]; count: number; }
@@ -348,7 +348,15 @@ function workoutMobilityMinutes(workout: WorkoutRecord): number {
   return total;
 }
 
-function matchesPersonalActivity(workout: WorkoutRecord, selection: GoalConfig["personalActivityId"]): boolean {
+function matchesPersonalActivity(workout: WorkoutRecord, selections: PersonalActivityId[]): boolean {
+  if (selections.includes("gym")) {
+    const gymWorkingSets = workout.exercises.reduce((total, exercise) => {
+      const def = exerciseById(exercise.exerciseId);
+      if (!def || exerciseLibraryGroup(def) !== "gym" || !resistanceLike(exerciseEntryLoggingProfile(exercise, def))) return total;
+      return total + workingSets(exercise).length;
+    }, 0);
+    if (gymWorkingSets >= 4) return true;
+  }
   for (const exercise of workout.exercises) {
     const def=exerciseById(exercise.exerciseId); if(!def || !workingSets(exercise).length) continue;
     // Safety-critical underwater drills remain recordable but intentionally do
@@ -356,14 +364,13 @@ function matchesPersonalActivity(workout: WorkoutRecord, selection: GoalConfig["
     if (exerciseSafetyFlags(def).includes("no_pr")) continue;
     const group=exerciseLibraryGroup(def);
     const id=def.id;
-    if (selection === "swimming" && group === "swimming") return true;
-    if (selection === "kickboxing" && group === "kickboxing") return true;
+    if (selections.includes("swimming") && group === "swimming") return true;
+    if (selections.includes("kickboxing") && group === "kickboxing") return true;
     // Jump rope remains valid cardio, but v0.13 no longer presents it as a
     // broad chosen-sport mission. The legacy value stays readable and earns no
     // new chosen-activity credit until the user chooses a supported activity.
-    if (selection === "running" && ["run","trail_running","sprinting","treadmill","stair_running"].includes(id)) return true;
-    if (selection === "cycling" && ["cycling","stationary_bike"].includes(id)) return true;
-    if (!selection || selection === "none" || selection === "any" || selection === "jump_rope") return false;
+    if (selections.includes("running") && ["run","trail_running","sprinting","treadmill","stair_running"].includes(id)) return true;
+    if (selections.includes("cycling") && ["cycling","stationary_bike"].includes(id)) return true;
   }
   return false;
 }
@@ -391,7 +398,8 @@ export function scienceWeekMetrics(workouts: WorkoutRecord[], hikes: HikeRecord[
   let cardioMinutes=0, mobilityMinutes=0, balanceMinutes=0;
   const personalDates = new Set<string>();
   goals = goalsForWeek(goals, weekKey(now));
-  const selection=goals.personalActivityId ?? "none";
+  const selections=(goals.personalActivityIds?.length ? goals.personalActivityIds : [goals.personalActivityId ?? "none"])
+    .filter((value): value is PersonalActivityId => !["none","any","jump_rope"].includes(value));
 
   for (const workout of workouts) {
     if(!workout.completedAt) continue;
@@ -412,12 +420,12 @@ export function scienceWeekMetrics(workouts: WorkoutRecord[], hikes: HikeRecord[
       else if(balanceLike(profile)) balanceMinutes += exerciseActiveMinutes(exercise);
     }
     if(workoutStrength) strengthDates.set(date,(strengthDates.get(date)??0)+workoutStrength);
-    if(matchesPersonalActivity(workout,selection)) personalDates.add(date);
+    if(matchesPersonalActivity(workout,selections)) personalDates.add(date);
   }
 
   const hikeDays=hikes.filter(hike=>{const d=new Date(`${hike.date}T12:00:00`); return d>=start&&d<end;});
   cardioMinutes += hikeDays.reduce((sum,hike)=>sum+Math.max(0,hike.movingMinutes),0);
-  if(selection==="hiking") hikeDays.filter(hike=>hike.movingMinutes>0).forEach(hike=>personalDates.add(hike.date));
+  if(selections.includes("hiking")) hikeDays.filter(hike=>hike.movingMinutes>0).forEach(hike=>personalDates.add(hike.date));
 
   const goldDates=new Set<string>();
   for(let i=0;i<7;i++){const d=new Date(start); d.setDate(start.getDate()+i); const key=localDateKey(d); if(meaningfulActivityScoreOnDate(workouts,hikes,key)>=1) goldDates.add(key);}

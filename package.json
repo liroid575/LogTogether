@@ -1,6 +1,6 @@
 {
   "name": "logtogether",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "description": "Privacy-first bilingual family exercise tracker PWA",

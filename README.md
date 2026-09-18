@@ -10,7 +10,7 @@ The project gradually grew into a bilingual family fitness PWA with structured w
 
 LogTogether is currently a **family-testing alpha**.
 
-The current application version is **v0.13.0**. It is actively used for family-oriented testing, but it is not yet presented as a public production service.
+The current application version is **v0.14.0**. It is actively used for family-oriented testing, but it is not yet presented as a public production service.
 
 The project favors:
 
@@ -572,6 +572,10 @@ It focuses mainly on presentation and large-family behavior:
 - clearer emphasis on custom-supplement management.
 
 The release does not intentionally change the core Firestore authorization model or exercise-science model introduced in earlier versions.
+
+### v0.14.0 — exercise schema, builders, and timer consistency
+
+v0.14.0 removes the empty Sports / Other group, gives live workouts and circuits one clear builder selector, improves saved-routine editing and reordering, adds two-choice Chosen Activity missions with a Gym option, separates live sessions from backfilled logs in History, and fixes stretch hold/recovery countdown behavior. Family comparison now separates workout dates visually. See [`docs/releases/V0.14.0.md`](docs/releases/V0.14.0.md) and the source-backed [`exercise and UX audit`](docs/research/LogTogether_v0.14.0_exercise_and_ux_audit.xlsx).
 
 ### v0.13.0 — family comparison and workout polish
 

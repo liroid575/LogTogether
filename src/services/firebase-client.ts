@@ -961,6 +961,7 @@ function parseCloudWorkout(snapshot: any): CloudWorkoutEnvelope {
     notes: typeof data.notes === "string" ? data.notes : "",
     visibility: data.visibility,
     selectedViewerIds: data.selectedViewerIds.filter((value: unknown) => typeof value === "string"),
+    ...(data.recordingSource === "live" || data.recordingSource === "manual" || data.recordingSource === "imported" ? { recordingSource: data.recordingSource } : {}),
     exercises: data.exercises,
     ...(data.routineMode === "standard" || data.routineMode === "circuit" ? { routineMode: data.routineMode } : {}),
     ...(Number.isInteger(data.circuitRounds) ? { circuitRounds: data.circuitRounds } : {}),
@@ -1074,6 +1075,7 @@ function parseCloudHike(snapshot: any): CloudHikeEnvelope {
     ...(typeof data.editedAt === "string" ? { editedAt: data.editedAt } : {}),
     visibility: "family",
     selectedViewerIds: [],
+    ...(data.recordingSource === "live" || data.recordingSource === "manual" || data.recordingSource === "imported" ? { recordingSource: data.recordingSource } : {}),
     updatedAt: clientUpdatedAt
   };
   return { hike, updatedAtMs: data.updatedAt?.toMillis?.() ?? (Date.parse(clientUpdatedAt) || 0) };

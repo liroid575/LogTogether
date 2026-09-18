@@ -21,10 +21,15 @@ export function hasRecordedWork(set: SetEntry): boolean {
 }
 export function goalsForWeek(goals: GoalConfig, key: string): GoalConfig {
   const plan = goals.weeklyPlans?.[key] ?? goals.legacyPlan;
-  return plan ? {...goals, ...plan} : goals;
+  if (!plan) return goals;
+  const selected = plan.personalActivityIds?.length ? plan.personalActivityIds : [plan.personalActivityId];
+  return {...goals, ...plan, personalActivityIds: selected};
 }
 export function rememberWeekPlan(goals: GoalConfig, key: string): void {
-  goals.legacyPlan ??= {difficulty: goals.difficulty ?? "normal", personalActivityId: goals.personalActivityId ?? "none"};
+  const selected = (goals.personalActivityIds?.length ? goals.personalActivityIds : [goals.personalActivityId ?? "none"]).filter((id, index, all) => id !== "none" && all.indexOf(id) === index).slice(0,2);
+  goals.personalActivityIds = selected;
+  goals.personalActivityId = selected[0] ?? "none";
+  goals.legacyPlan ??= {difficulty: goals.difficulty ?? "normal", personalActivityId: goals.personalActivityId, personalActivityIds: [...selected]};
   goals.weeklyPlans ??= {};
-  goals.weeklyPlans[key] = {difficulty: goals.difficulty ?? "normal", personalActivityId: goals.personalActivityId ?? "none"};
+  goals.weeklyPlans[key] = {difficulty: goals.difficulty ?? "normal", personalActivityId: goals.personalActivityId, personalActivityIds: [...selected]};
 }

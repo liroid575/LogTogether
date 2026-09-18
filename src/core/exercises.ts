@@ -182,7 +182,8 @@ const CALISTHENICS_IDS = new Set([
   "plank","side_plank","crunch","dead_bug"
 ]);
 
-export const EXERCISE_LIBRARY_GROUPS: ExerciseLibraryGroup[] = ["home_functional", "gym", "calisthenics", "outdoor_cardio", "mobility_yoga", "swimming", "kickboxing", "sports_other"];
+// Keep the legacy `sports_other` type readable, but do not render an empty group.
+export const EXERCISE_LIBRARY_GROUPS: ExerciseLibraryGroup[] = ["home_functional", "gym", "calisthenics", "outdoor_cardio", "mobility_yoga", "swimming", "kickboxing"];
 
 export function exerciseLibraryGroup(exercise: ExerciseDefinition): ExerciseLibraryGroup {
   if (exercise.group) return exercise.group;
@@ -262,6 +263,20 @@ const STATIC_STRETCH_IDS = new Set([
   "hamstring_stretch","hip_flexor_stretch","quad_stretch","calf_stretch","chest_stretch",
   "child_pose","downward_dog","cobra_pose","pigeon_pose","warrior_one","warrior_two"
 ]);
+const UNILATERAL_EXERCISE_IDS = new Set([
+  "single_arm_row","bulgarian_split_squat","walking_lunge","pistol_squat","shrimp_squat",
+  "standing_hip_abduction","low_step_up","supported_single_leg_stand","side_plank","bird_dog",
+  "hip_flexor_stretch","hamstring_stretch","quad_stretch","calf_stretch","pigeon_pose","thoracic_rotation"
+]);
+
+export type ExerciseLaterality = "none" | "optional" | "per_side";
+
+/** One shared laterality rule for live workouts, circuits, routines and manual logs. */
+export function exerciseLaterality(exercise: ExerciseDefinition): ExerciseLaterality {
+  if (UNILATERAL_EXERCISE_IDS.has(exercise.id)) return "per_side";
+  if (["downward_dog","child_pose","cobra_pose","warrior_one","warrior_two","sun_salutation"].includes(exercise.id)) return "none";
+  return "none";
+}
 const DYNAMIC_MOBILITY_IDS = new Set(["shoulder_mobility","cat_cow","thoracic_rotation","ankle_mobility"]);
 const NORMAL_SWIM_IDS = new Set([
   "swim_freestyle","swim_breaststroke","swim_backstroke","swim_butterfly","swim_sidestroke","swim_elementary_backstroke"
@@ -353,7 +368,9 @@ export function exerciseStarterDefault(exercise: ExerciseDefinition): ExerciseSt
       : { sets: 4, durationSec: 30, restSec: 60, recoverySec: 60 };
   }
   if (profile === "sprint_intervals") return { sets: 4, durationSec: 20, restSec: 90, recoverySec: 90 };
-  if (profile === "static_stretch") return { sets: 2, durationSec: 30, restSec: 0 };
+  // A short transition keeps stretch circuits predictable. Users can still set
+  // this to zero, which now means no recovery timer instead of an open count-up.
+  if (profile === "static_stretch") return { sets: 2, durationSec: 30, restSec: 15 };
   if (profile === "dynamic_mobility") return { sets: 2, reps: 8, repMin: 5, repMax: 10, restSec: 0 };
   if (profile === "yoga_flow") return { sets: 1, minutes: 10, restSec: 0 };
   if (profile === "swim_session") return { sets: 1, minutes: 20, restSec: 0 };

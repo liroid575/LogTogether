@@ -27,11 +27,11 @@ const expectedFormHash = "cce128118fb897605224d241c7630f79ad399ffc0e17d9e3490376
 if (createHash("sha256").update(canonicalFormUrl).digest("hex") !== expectedFormHash) {
   throw new Error("The deployed feedback link is not the approved LogTogether form.");
 }
-if (!serviceWorker.includes("logtogether-shell-v0.13.0-family-details-routines-photos")) {
-  throw new Error("The deployed service worker is not v0.13.0.");
+if (!serviceWorker.includes("logtogether-shell-v0.14.0-science-builders-timers")) {
+  throw new Error("The deployed service worker is not v0.14.0.");
 }
-if (!main.includes('APP_VERSION = "0.13.0"')) {
-  throw new Error("The deployed application bundle is not v0.13.0.");
+if (!main.includes('APP_VERSION = "0.14.0"')) {
+  throw new Error("The deployed application bundle is not v0.14.0.");
 }
 
-console.log("Live deployment verified: v0.13.0 shell, app bundle, and approved feedback form are present.");
+console.log("Live deployment verified: v0.14.0 shell, app bundle, and approved feedback form are present.");

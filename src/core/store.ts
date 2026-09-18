@@ -811,6 +811,7 @@ export function createBlankWorkout(state: AppState): WorkoutRecord {
     notes: "",
     visibility: "family",
     selectedViewerIds: [],
+    recordingSource: "live",
     exercises: []
   };
 }

@@ -3238,6 +3238,9 @@ html.rest-alert-flash #rest-timer { animation:rest-complete-pulse .9s ease-out; 
 .family-workout-row > summary > div { min-width:0; display:grid; gap:3px; }
 .family-workout-row[open] > summary .history-chevron { transform:rotate(180deg); }
 .family-workout-detail { display:grid; gap:12px; margin:12px 0 4px 52px; }
+.family-workout-date-divider { display:flex; align-items:center; gap:10px; margin:10px 0 2px; color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.04em; }
+.family-workout-date-divider::before,.family-workout-date-divider::after { content:""; height:1px; flex:1; background:var(--border); }
+.family-workout-date-divider span { white-space:nowrap; }
 .private-photo-button { display:block; padding:0; border:0; background:transparent; color:inherit; cursor:zoom-in; max-width:100%; }
 .history-details > .private-photo-button { width:100%; margin-bottom:12px; }
 .day-photos .private-photo-button { flex:0 0 auto; }
@@ -3261,3 +3264,22 @@ html.rest-alert-flash #rest-timer { animation:rest-complete-pulse .9s ease-out; 
 .compact-set-row .set-flow-actions .btn { min-height:48px; font-size:1rem; }
 .set-input,.mini-field .select { min-height:44px; }
 .goal-difficulty-row { padding:12px; border:1px solid var(--accent); border-radius:12px; }
+
+/* v0.14.0 workout builders, mission choices, and accessible reordering */
+.routine-home-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.routine-manager-section { margin-top:24px; padding-top:18px; border-top:1px solid var(--border); }
+.workout-kind-card { margin-bottom:14px; }
+.workout-kind-card p { margin:8px 0 0; }
+.mission-personal-choices { border:0; padding:0; margin:10px 0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.mission-personal-choices legend { color:var(--muted); font-size:11px; margin-bottom:6px; }
+.mission-personal-choices label { display:flex; align-items:center; gap:8px; min-height:42px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); }
+.mission-personal-choices input { width:20px; height:20px; }
+.drag-handle-button,.drag-handle { min-width:42px; min-height:42px; display:inline-grid; place-items:center; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); color:var(--muted); cursor:grab; touch-action:none; }
+.drag-handle-button:active,.drag-handle:active { cursor:grabbing; }
+.routine-editor-exercise.dragging,.circuit-row.dragging,.regular-workout-card.dragging { opacity:.55; border-color:var(--accent); }
+.routine-editor-exercise legend { display:flex; align-items:center; gap:8px; font-weight:750; }
+.circuit-order-buttons { display:flex; align-items:center; gap:6px; margin-left:auto; }
+.circuit-row-header { align-items:center; }
+.invite-install-guide { margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px; background:var(--surface-2); }
+.invite-install-guide ol { margin:8px 0 10px; padding-left:20px; color:var(--muted); font-size:12px; line-height:1.55; }
+@media (max-width:520px) { .mission-personal-choices { grid-template-columns:1fr; } }

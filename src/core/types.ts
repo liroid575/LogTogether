@@ -26,6 +26,8 @@ export type ExerciseProgressionProfile = "load_reps" | "bodyweight_reps" | "skil
 export type ExerciseSafetyFlag = "no_intensity_bonus" | "no_pr" | "no_progression" | "quality_before_volume" | "aquatic_supervision" | "secure_support";
 export type ExerciseScienceTag = "balance" | "functional" | "home_friendly";
 export type GoalDifficulty = "easy" | "normal" | "hard" | "extreme";
+export type PersonalActivityId = "none" | "any" | "hiking" | "swimming" | "running" | "cycling" | "kickboxing" | "gym" | "jump_rope";
+export type RecordingSource = "live" | "manual" | "imported";
 
 export interface ExerciseDefinition {
   id: string;
@@ -99,6 +101,7 @@ export interface WorkoutRecord {
   notes: string;
   visibility: Visibility;
   selectedViewerIds: string[];
+  recordingSource?: RecordingSource;
   exercises: WorkoutExerciseEntry[];
   routineMode?: "standard" | "circuit";
   circuitRounds?: number;
@@ -150,6 +153,7 @@ export interface HikeRecord {
   notes: string;
   visibility: Visibility;
   selectedViewerIds: string[];
+  recordingSource?: RecordingSource;
   photoId?: string;
   routePoints?: RoutePoint[];
   routeSource?: "gpx";
@@ -206,11 +210,12 @@ export interface GoalConfig {
   difficulty?: GoalDifficulty;
   difficultyWeek?: string;
   difficultyChanges?: number;
-  weeklyPlans?: Record<string, { difficulty: GoalDifficulty; personalActivityId: NonNullable<GoalConfig["personalActivityId"]> }>;
-  legacyPlan?: { difficulty: GoalDifficulty; personalActivityId: NonNullable<GoalConfig["personalActivityId"]> };
+  weeklyPlans?: Record<string, { difficulty: GoalDifficulty; personalActivityId: PersonalActivityId; personalActivityIds?: PersonalActivityId[] }>;
+  legacyPlan?: { difficulty: GoalDifficulty; personalActivityId: PersonalActivityId; personalActivityIds?: PersonalActivityId[] };
   // `any` and `jump_rope` remain readable for v0.12 backups and historical
   // weekly plans. v0.13 migrates either value to `none` for the current week.
-  personalActivityId?: "none" | "any" | "hiking" | "swimming" | "running" | "cycling" | "kickboxing" | "jump_rope";
+  personalActivityId?: PersonalActivityId;
+  personalActivityIds?: PersonalActivityId[];
 }
 export interface StoryRecord { id: string; ownerId: string; familyId: string; mediaId: string; createdAt: string; expiresAt: string; caption?: string; }
 

@@ -25,6 +25,12 @@ Setup and operational documentation:
 
 Version-specific release notes are stored in [`releases/`](releases/).
 
+- [v0.14.0 — exercise schema, builders, and timer consistency](releases/V0.14.0.md)
+
+## Research
+
+- [v0.14.0 exercise and UX audit](research/LogTogether_v0.14.0_exercise_and_ux_audit.xlsx) — exercise-by-exercise defaults, product decisions, device metrics, and sources
+
 ## Archive
 
 Older implementation notes, fixes, checkpoints, and development records are preserved in [`archive/`](archive/).
