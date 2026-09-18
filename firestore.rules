@@ -279,7 +279,8 @@ service cloud.firestore {
     function validFamilyWeeklyCreate(data) {
       return signedIn()
         && data.keys().hasAll(['schemaVersion', 'ownerId', 'familyId', 'weekStart', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
-        && data.keys().hasOnly(['schemaVersion', 'ownerId', 'familyId', 'weekStart', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
+        && data.keys().hasOnly(['schemaVersion', 'ownerId', 'familyId', 'weekStart', 'difficulty', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
+        && (!('difficulty' in data) || data.difficulty in ['easy', 'normal', 'hard', 'extreme'])
         && data.schemaVersion == 1
         && data.ownerId == request.auth.uid
         && data.familyId is string
@@ -307,7 +308,8 @@ service cloud.firestore {
         && after.familyId == before.familyId
         && after.weekStart == before.weekStart
         && after.schemaVersion == before.schemaVersion
-        && after.diff(before).affectedKeys().hasOnly(['weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
+        && after.diff(before).affectedKeys().hasOnly(['difficulty', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
+        && (!('difficulty' in after) || after.difficulty in ['easy', 'normal', 'hard', 'extreme'])
         && after.weeklyCalories is int && after.weeklyCalories >= 0
         && after.workoutCount is int && after.workoutCount >= 0
         && after.hikeCount is int && after.hikeCount >= 0
@@ -647,7 +649,7 @@ service cloud.firestore {
       allow delete: if signedIn() && request.auth.uid == uid && resource.data.ownerId == request.auth.uid;
     }
 
-    // Weekly difficulty/mission configuration is private. Family-facing progress
+    // Detailed mission configuration is private; weekly difficulty is shared. Family-facing progress
     // is published separately as a minimal daily summary document.
     match /personalGoals/{goalId} {
       allow get, list: if signedIn() && resource.data.ownerId == request.auth.uid;

@@ -1,3 +1,4 @@
+const { reconcileGoldReward } = require("./gold-rewards");
 const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
@@ -188,49 +189,44 @@ async function claimSocialEvent(eventId, data) {
   });
 }
 
-// v0.11.1: Gold Day is a daily, exactly-once social event. Existing v0.11.0
-// daily documents did not have a boolean goldDay field, so the first write that
-// merely migrates such a document is intentionally ignored to avoid old alerts.
-exports.onFamilyDailyChanged = onDocumentWritten({document:"familyProgress/{dailyId}",region:REGION,secrets:PUSH_SECRETS}, async event => {
-  const beforeExists = Boolean(event.data?.before?.exists);
-  const before = beforeExists ? event.data.before.data() : null;
+// Reconcile the current document rather than trusting trigger arrival order.
+// Reward state and wallet move together, including deletion and restoration.
+exports.onFamilyDailyChanged = onDocumentWritten({document:"familyProgress/{dailyId}",region:REGION,secrets:PUSH_SECRETS,maxInstances:1}, async event => {
+  const before = event.data?.before?.exists ? event.data.before.data() : null;
   const after = event.data?.after?.exists ? event.data.after.data() : null;
-  if (!after || after.goldDay !== true) return;
-  if (before?.goldDay === true) return;
-  if (typeof after.ownerId !== "string" || typeof after.familyId !== "string" || typeof after.date !== "string") return;
-  // Ignore old v0.11.0 records when the new boolean is backfilled, except for
-  // today's record. Allowing today makes the first v0.11.1 test intuitive while
-  // still preventing a week's worth of retroactive Gold alerts.
-  if (beforeExists && typeof before?.goldDay !== "boolean" && after.date !== datePartsInZone().date) return;
-
-  const eventId = `gold_${after.ownerId}_${after.date}`;
-  const claimed = await claimSocialEvent(eventId,{kind:"gold",ownerId:after.ownerId,familyId:after.familyId,date:after.date});
-  if (!claimed) return;
-
-  // Earn at most one Poke for this day. Owners have temporary infinite Pokes in
-  // v0.11.1, so their wallet does not need to accumulate test tokens.
-  const accessSnap = await db.doc(`access/${after.ownerId}`).get();
-  const isOwner = accessSnap.exists && accessSnap.data()?.status === "active" && accessSnap.data()?.role === "owner";
-  if (!isOwner) {
-    const walletRef = db.doc(`pokeWallets/${after.ownerId}`);
-    await db.runTransaction(async tx => {
-      const walletSnap = await tx.get(walletRef);
-      const current = Math.max(0,Math.min(POKE_MAX,Number(walletSnap.data()?.balance ?? 0)));
-      const balance = Math.min(POKE_MAX,current+1);
-      tx.set(walletRef,{schemaVersion:1,ownerId:after.ownerId,balance,maxBalance:POKE_MAX,updatedAt:FieldValue.serverTimestamp()},{merge:true});
-    });
-  }
-
-  const memberSnap = await db.doc(`families/${after.familyId}/members/${after.ownerId}`).get();
-  const name = displayName(memberSnap.exists ? memberSnap.data() : {});
-  const delivery = await notifyVisibleFamily(after.ownerId,after.familyId,"gold",{
-    kind:"gold",
-    eventId, senderUid:after.ownerId, senderName:name,
-    title:`${name} earned today's Gold Day! ⭐`,
-    body:"Today's meaningful activity goal is complete.",
-    url:"/#family"
+  if (before && after && before.goldDay === after.goldDay) return;
+  const identity = after || before;
+  if (!identity || typeof identity.ownerId !== "string" || typeof identity.familyId !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(identity.date ?? "")) return;
+  if (event.params.dailyId !== `${identity.ownerId}_${identity.date}`) return;
+  const eventId = `gold_${identity.ownerId}_${identity.date}`;
+  const ledgerRef = db.doc(`socialEvents/${safeDocPart(eventId)}`);
+  const walletRef = db.doc(`pokeWallets/${identity.ownerId}`);
+  const dailyRef = db.doc(`familyProgress/${event.params.dailyId}`);
+  const changed = await db.runTransaction(async tx => {
+    const [dailySnap, ledgerSnap, walletSnap, accessSnap] = await Promise.all([
+      tx.get(dailyRef), tx.get(ledgerRef), tx.get(walletRef), tx.get(db.doc(`access/${identity.ownerId}`))
+    ]);
+    const daily = dailySnap.exists ? dailySnap.data() : null;
+    const access = accessSnap.exists ? accessSnap.data() : null;
+    if (!access || access.status !== "active" || access.familyId !== identity.familyId) return null;
+    if (daily && (daily.ownerId !== identity.ownerId || daily.familyId !== identity.familyId || daily.date !== identity.date)) return null;
+    const eligible = daily?.goldDay === true;
+    // Older dates can be corrected, but never mass-minted on first upgrade.
+    if (!ledgerSnap.exists && identity.date !== datePartsInZone().date) return null;
+    const result = reconcileGoldReward(ledgerSnap.exists ? ledgerSnap.data() : null, walletSnap.data(), eligible, access.role === "owner");
+    if (!result) return null;
+    tx.set(ledgerRef,{...result.ledger,kind:"gold",ownerId:identity.ownerId,familyId:identity.familyId,date:identity.date,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+    tx.set(walletRef,{schemaVersion:1,ownerId:identity.ownerId,balance:result.balance,correctionDebt:result.correctionDebt,maxBalance:POKE_MAX,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+    return result;
   });
-  await recordUsage(after.familyId,{goldEvents:1,pushDeliveries:delivery.sent,pushFailures:delivery.failed});
+  if (!changed?.notify) return;
+  const memberSnap = await db.doc(`families/${identity.familyId}/members/${identity.ownerId}`).get();
+  const name = displayName(memberSnap.exists ? memberSnap.data() : {});
+  const delivery = await notifyVisibleFamily(identity.ownerId,identity.familyId,"gold",{
+    kind:"gold",eventId,senderUid:identity.ownerId,senderName:name,
+    title:`${name} earned today's Gold Day! ⭐`,body:"Today's activity game goal is complete.",url:"/#family"
+  });
+  await recordUsage(identity.familyId,{goldEvents:1,pushDeliveries:delivery.sent,pushFailures:delivery.failed});
 });
 
 exports.onBadgeCreated = onDocumentCreated({document:"badges/{badgeId}",region:REGION,secrets:PUSH_SECRETS}, async event => {

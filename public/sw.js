@@ -1,4 +1,4 @@
-const CACHE = "logtogether-shell-v0.11.7-family-burst-ui-polish";
+const CACHE = "logtogether-shell-v0.12.0-timers-routines-rewards";
 const SHELL = [
   "/",
   "/index.html",

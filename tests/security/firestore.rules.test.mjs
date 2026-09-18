@@ -295,13 +295,16 @@ test("member can publish their own bounded weekly summary but not another member
   const ref = doc(db, "familyWeekly/bob_2026-09-08");
   await assertSucceeds(setDoc(ref, {
     schemaVersion: 1, ownerId: "bob", familyId: "family-a", weekStart: "2026-09-08",
+    difficulty: "normal",
     weeklyCalories: 180, workoutCount: 1, hikeCount: 0, hikeKm: 0,
     calorieDays: 1, waterDays: 2, categoriesHit: 2, missionScore: 5, missionMax: 22,
     supplements: [], clientUpdatedAt: "2026-09-13T04:00:00.000Z", updatedAt: nowTs()
   }));
   await assertSucceeds(updateDoc(ref, {
-    weeklyCalories: 220, missionScore: 6, clientUpdatedAt: "2026-09-13T05:00:00.000Z", updatedAt: nowTs()
+    difficulty: "hard", weeklyCalories: 220, missionScore: 6,
+    clientUpdatedAt: "2026-09-13T05:00:00.000Z", updatedAt: nowTs()
   }));
+  await assertFails(updateDoc(ref, { difficulty: "unsafe" }));
   await assertFails(updateDoc(doc(db, "familyWeekly/alice_2026-09-08"), { missionScore: 22 }));
 });
 

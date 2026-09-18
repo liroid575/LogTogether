@@ -10,7 +10,7 @@ The project gradually grew into a bilingual family fitness PWA with structured w
 
 LogTogether is currently a **family-testing alpha**.
 
-The current application version is **v0.11.7**. It is actively used for family-oriented testing, but it is not yet presented as a public production service.
+The current application version is **v0.12.0**. It is actively used for family-oriented testing, but it is not yet presented as a public production service.
 
 The project favors:
 
@@ -28,8 +28,8 @@ The project favors:
 
 - Strength workouts with sets, reps, weight, timing, rest periods, and notes.
 - Circuit routines with configurable rounds.
-- Saved routines.
-- Retrospective **Log activity** flow.
+- Saved routines with detailed editing and multi-select deletion.
+- Retrospective **Log completed activity** flow, clearly separated from starting a workout.
 - Activity-aware recording for strength, machines, cardio, mobility, boxing, carries, intervals, and other exercise types.
 - Per-set Start, Finish, Skip, removal, duration, and work/rest timing.
 - Workout history with editable completed records.
@@ -49,13 +49,13 @@ The project favors:
 
 ### Hydration and supplements
 
-- Daily water logging.
+- Daily water logging with compact presets and a custom amount.
 - Seven-day hydration trends.
 - Configurable water goals.
 - Historical hydration editing.
 - Supplement logging.
 - Custom supplements and brands.
-- Weekly supplement review.
+- Weekly supplement review with a Monday-to-Sunday recorded-day view and exact entry details.
 - Exact supplement records remain private rather than being exposed to family members.
 
 ### Hiking
@@ -558,7 +558,7 @@ Changes included:
 
 ### v0.11.7 — large-family social polish
 
-v0.11.7 is the current family-testing release.
+v0.11.7 was the previous family-testing release.
 
 It focuses mainly on presentation and large-family behavior:
 
@@ -572,6 +572,10 @@ It focuses mainly on presentation and large-family behavior:
 - clearer emphasis on custom-supplement management.
 
 The release does not intentionally change the core Firestore authorization model or exercise-science model introduced in earlier versions.
+
+### v0.12.0 — family-test reliability and clarity
+
+v0.12.0 fixes timed exercise countdowns, separates planned and actual duration, improves routine editing and backdated logging, clarifies missions and rewards, repairs the user's own family comparison, and makes Gold Day Poke rewards reversible when qualifying activity is corrected. See [`docs/releases/V0.12.0.md`](docs/releases/V0.12.0.md) for the detailed behavior, scientific interpretation, and verification record.
 
 ## Documentation
 

@@ -1,3 +1,4 @@
+import { completedActiveSeconds, hasRecordedWork, goalsForWeek } from "./training.js";
 import { exerciseById, exerciseDirectSecondaryCategories, exerciseEntryLoggingProfile, exerciseLibraryGroup, exerciseLoggingProfile, exerciseMovementPattern, exerciseMuscleWeights, exerciseSafetyFlags } from "./exercises.js";
 import type { ExerciseCategory, ExerciseDefinition, GoalConfig, GoalDifficulty, HikeRecord, HydrationDay, WorkoutRecord } from "./types.js";
 
@@ -220,18 +221,11 @@ export function categoryDistributionForDate(workouts: WorkoutRecord[], hikes: Hi
 }
 
 function completedDurationSeconds(set: WorkoutRecord["exercises"][number]["sets"][number]): number {
-  if (set.startedAt && set.completedAt) {
-    const started = new Date(set.startedAt).getTime();
-    const completed = new Date(set.completedAt).getTime();
-    if (Number.isFinite(started) && Number.isFinite(completed) && completed > started) return (completed - started) / 1000;
-  }
-  if ((set.durationSec ?? 0) > 0) return Math.max(0, set.durationSec ?? 0);
-  if ((set.reps ?? 0) > 0) return Math.min(180, Math.max(15, (set.reps ?? 0) * 3));
-  return 0;
+  return completedActiveSeconds(set);
 }
 
 function workingSets(exercise: WorkoutRecord["exercises"][number]) {
-  return exercise.sets.filter(set => set.completed && set.setType !== "warmup");
+  return exercise.sets.filter(hasRecordedWork);
 }
 
 function scienceProfile(exercise: WorkoutRecord["exercises"][number]) {
@@ -367,7 +361,7 @@ function matchesPersonalActivity(workout: WorkoutRecord, selection: GoalConfig["
     if (selection === "jump_rope" && id.startsWith("jump_rope_")) return true;
     if (selection === "running" && ["run","trail_running","sprinting","treadmill","stair_running"].includes(id)) return true;
     if (selection === "cycling" && ["cycling","stationary_bike"].includes(id)) return true;
-    if ((!selection || selection === "any") && ["outdoor_cardio","swimming","kickboxing","sports_other"].includes(group)) return true;
+    if (!selection || selection === "any") return true;
   }
   return false;
 }
@@ -392,7 +386,9 @@ export function scienceWeekMetrics(workouts: WorkoutRecord[], hikes: HikeRecord[
   const {start,end}=currentWeekBounds(now);
   const movement={push:0,pull:0,lower:0,core:0};
   const strengthDates=new Map<string,number>();
-  let cardioMinutes=0, mobilityMinutes=0, balanceMinutes=0, personalSessions=0;
+  let cardioMinutes=0, mobilityMinutes=0, balanceMinutes=0;
+  const personalDates = new Set<string>();
+  goals = goalsForWeek(goals, weekKey(now));
   const selection=goals.personalActivityId ?? "any";
 
   for (const workout of workouts) {
@@ -414,12 +410,12 @@ export function scienceWeekMetrics(workouts: WorkoutRecord[], hikes: HikeRecord[
       else if(balanceLike(profile)) balanceMinutes += exerciseActiveMinutes(exercise);
     }
     if(workoutStrength) strengthDates.set(date,(strengthDates.get(date)??0)+workoutStrength);
-    if(matchesPersonalActivity(workout,selection)) personalSessions += 1;
+    if(matchesPersonalActivity(workout,selection)) personalDates.add(date);
   }
 
   const hikeDays=hikes.filter(hike=>{const d=new Date(`${hike.date}T12:00:00`); return d>=start&&d<end;});
   cardioMinutes += hikeDays.reduce((sum,hike)=>sum+Math.max(0,hike.movingMinutes),0);
-  if(selection==="hiking"||selection==="any") personalSessions += hikeDays.length;
+  if(selection==="hiking"||selection==="any") hikeDays.filter(hike=>hike.movingMinutes>0).forEach(hike=>personalDates.add(hike.date));
 
   const goldDates=new Set<string>();
   for(let i=0;i<7;i++){const d=new Date(start); d.setDate(start.getDate()+i); const key=localDateKey(d); if(meaningfulActivityScoreOnDate(workouts,hikes,key)>=1) goldDates.add(key);}
@@ -431,7 +427,7 @@ export function scienceWeekMetrics(workouts: WorkoutRecord[], hikes: HikeRecord[
     mobilityMinutes,
     balanceMinutes,
     goldDays:goldDates.size,
-    personalSessions,
+    personalSessions: personalDates.size,
     hydrationDays:waterDays,
     weeklyCalories:0
   };
@@ -451,6 +447,7 @@ export interface WeeklyMissionResult {
 }
 
 export function weeklyGoalScore(workouts: WorkoutRecord[], hikes: HikeRecord[], weightKg: number, goals: GoalConfig, hydration?: HydrationDay, hydrationHistory: HydrationDay[] = [], now = new Date()): WeeklyMissionResult {
+  goals = goalsForWeek(goals, weekKey(now));
   const targets=scienceMissionTargets(goals.difficulty??"normal");
   const metrics=scienceWeekMetrics(workouts,hikes,goals,hydration,hydrationHistory,now);
   metrics.weeklyCalories=dailyCalorieSeries(workouts,hikes,weightKg,now).reduce((sum,p)=>sum+p.count,0);
@@ -523,12 +520,12 @@ export function weeklyHealthGuidelineProgress(workouts: WorkoutRecord[], hikes: 
       if(resistanceLike(profile)) sets += workingSets(exercise).length;
       else if(cardioLike(profile)&&!exerciseSafetyFlags(def).includes("no_pr")){
         const minutes=exerciseActiveMinutes(exercise);
-        aerobicEquivalentMinutes += minutes * ((exercise.difficulty??3)>=4?2:1);
+        aerobicEquivalentMinutes += minutes * (exercise.difficulty === undefined ? 0 : exercise.difficulty>=4 ? 2 : exercise.difficulty===3 ? 1 : 0);
       }
     }
     if(sets) strengthDates.set(date,(strengthDates.get(date)??0)+sets);
   }
-  for(const hike of hikes){const d=new Date(`${hike.date}T12:00:00`); if(d>=start&&d<end) aerobicEquivalentMinutes += Math.max(0,hike.movingMinutes)*(hike.difficulty>=4?2:1);}
+  for(const hike of hikes){const d=new Date(`${hike.date}T12:00:00`); if(d>=start&&d<end) aerobicEquivalentMinutes += Math.max(0,hike.movingMinutes)*(hike.difficulty>=4?2:hike.difficulty===3?1:0);}
   return {aerobicEquivalentMinutes, strengthDays:[...strengthDates.values()].filter(value=>value>=4).length};
 }
 

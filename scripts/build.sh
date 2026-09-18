@@ -7,6 +7,13 @@ mkdir -p dist/assets
 tsc -p tsconfig.json
 cp index.html dist/index.html
 cp -R public/. dist/
+node --input-type=module <<'NODE'
+import {readdirSync,readFileSync,writeFileSync} from 'node:fs';
+const walk = dir => readdirSync(dir,{withFileTypes:true}).flatMap(entry => entry.isDirectory() ? walk(`${dir}/${entry.name}`) : entry.name.endsWith('.js') ? [`/${dir.slice(5)}/${entry.name}`] : []);
+const file='dist/sw.js';
+writeFileSync(file,readFileSync(file,'utf8').replace('const SHELL = [',`const SHELL = [\n${walk('dist/assets').map(path=>JSON.stringify(path)+',').join('\n')}`));
+NODE
+
 
 if [[ -f "$ROOT/config.local.js" ]]; then
   cp "$ROOT/config.local.js" dist/config.js

@@ -7,7 +7,7 @@ const text = async path => readFile(new URL(`../../${path}`, import.meta.url), "
 test("Home exposes Log activity while hiking keeps a dedicated route", async () => {
   const main = await text("src/main.ts");
   assert.match(main, /data-action="log-activity"/);
-  assert.match(main, /Log activity/);
+  assert.match(main, /Log completed activity/);
   assert.match(main, /Hiking keeps its dedicated record/);
   assert.match(main, /exercise\.id!=="hiking_cardio"/);
   assert.match(main, /if\(exerciseId==="__hike__"\)/);
@@ -29,14 +29,14 @@ test("feedback uses an external optional Google Forms hook with privacy guidance
   assert.match(config, /feedbackFormUrl:\s*""/);
   assert.match(main, /Help improve LogTogether/);
   assert.match(main, /Report bug \/ share idea/);
-  assert.match(main, /Copy anonymous app info/);
+  assert.match(main, /Copy version & device info/);
   assert.match(main, /Avoid pasting private workout contents, account IDs, GPS routes or other sensitive data/);
   assert.match(main, /tutorial-feedback-page/);
 });
 
-test("Quick Guide includes the feedback page and keeps seven snapped pages", async () => {
+test("Quick Guide includes the feedback page and keeps eight snapped pages", async () => {
   const main = await text("src/main.ts");
-  assert.match(main, /clamp\(this\.missionTutorialPage, 0, 6\)/);
-  assert.match(main, /this\.missionTutorialPage >= 6/);
-  assert.match(main, /safe===6/);
+  assert.match(main, /clamp\(this\.missionTutorialPage, 0, 7\)/);
+  assert.match(main, /this\.missionTutorialPage >= 7/);
+  assert.match(main, /safe===7/);
 });

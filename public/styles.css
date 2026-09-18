@@ -3185,3 +3185,47 @@ html.rest-alert-flash #rest-timer { animation:rest-complete-pulse .9s ease-out; 
 /* v0.11.7 — larger Poke rain, burst-safe family events, supplement disclosure polish */
 .poke-emoji-rain i { text-shadow:0 4px 12px rgba(0,0,0,.18); }
 .custom-supplement-maker > summary { text-underline-offset:3px; }
+
+/* v0.12: readable disclosure controls and full-width workout actions. */
+[data-fold] > summary, .mission-detail > summary, .supplement-review-row > summary {
+  cursor: pointer; min-height: 48px; align-content: center;
+}
+[data-fold] > summary { font-weight: 700; padding: 8px 0; }
+.mission-detail { border-bottom: 1px solid var(--border); }
+.mission-detail > p { padding: 0 12px 12px; margin: 0; line-height: 1.6; }
+.mission-detail .mission-row { cursor:pointer; }
+.water-quick { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; }
+.water-quick .btn { padding:12px 3px; min-width:0; min-height:48px; font-size:.9rem; }
+.log-date-bar { margin-bottom:14px; }
+.log-date-bar label { display:block; }
+.log-date-bar input { margin-top:6px; max-width:100%; }
+.custom-water-form { display:flex; gap:10px; align-items:end; margin:12px 0; }
+.custom-water-form label { flex:1; min-width:0; }
+.supplement-review-row > summary { display:flex; justify-content:space-between; gap:12px; padding:12px 0; }
+.supplement-days { display:flex; gap:8px; color:var(--accent); white-space:nowrap; }
+.routine-manager { margin-bottom:16px; }
+.routine-manager-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 0; border-bottom:1px solid var(--border); }
+.routine-manager-row label { flex:1 1 140px; overflow-wrap:anywhere; padding:10px 0; }
+.routine-manager-row input { width:22px; height:22px; vertical-align:middle; }
+.routine-editor { margin-top:20px; }
+.routine-editor-exercise { min-width:0; margin:16px 0; padding:12px; border:1px solid var(--border); border-radius:14px; }
+.routine-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.routine-fields .field, .routine-fields input, .routine-fields select { min-width:0; width:100%; }
+.routine-order,.routine-editor-actions { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+.routine-editor-set { padding:12px 0; border-bottom:1px solid var(--border); }
+.routine-editor .btn { min-height:44px; }
+.set-row.compact-set-row, .session-set-row.compact-set-row {
+  grid-template-columns:36px minmax(0,1fr) 44px; gap:10px; align-items:start;
+}
+.compact-set-row .set-number,.session-set-row.compact-set-row .set-number { grid-column:1; grid-row:1; }
+.compact-set-row .set-content,.session-set-row.compact-set-row .set-content { grid-column:2 / -1; grid-row:1; min-width:0; }
+.compact-set-row .set-remove-left,.session-set-row.compact-set-row .set-remove-left { display:block; grid-column:1; grid-row:2; }
+.compact-set-row > .set-flow-actions,.session-set-row.compact-set-row > .set-flow-actions,
+.compact-set-row > .set-state-btn,.session-set-row.compact-set-row > .set-state-btn,
+.compact-set-row > .set-state-skipped,.session-set-row.compact-set-row > .set-state-skipped {
+  grid-column:1 / -1; grid-row:3; width:100%; min-height:48px;
+}
+.compact-set-row .set-flow-actions { display:grid; grid-template-columns:1fr; gap:8px; }
+.compact-set-row .set-flow-actions .btn { min-height:48px; font-size:1rem; }
+.set-input,.mini-field .select { min-height:44px; }
+.goal-difficulty-row { padding:12px; border:1px solid var(--accent); border-radius:12px; }

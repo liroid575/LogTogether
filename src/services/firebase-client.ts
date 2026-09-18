@@ -129,6 +129,7 @@ export interface CloudFamilyWeeklySummary {
   ownerId: string;
   familyId: string;
   weekStart: string;
+  difficulty?: GoalConfig["difficulty"];
   weeklyCalories: number;
   workoutCount: number;
   hikeCount: number;
@@ -1206,6 +1207,7 @@ function parseFamilyWeekly(snapshot: any): CloudFamilyWeeklySummary {
     ownerId: data.ownerId,
     familyId: data.familyId,
     weekStart: data.weekStart,
+    ...(["easy","normal","hard","extreme"].includes(data.difficulty) ? {difficulty:data.difficulty as GoalConfig["difficulty"]} : {}),
     weeklyCalories: Math.max(0, Math.round(Number(data.weeklyCalories) || 0)),
     workoutCount: Math.max(0, Math.round(Number(data.workoutCount) || 0)),
     hikeCount: Math.max(0, Math.round(Number(data.hikeCount) || 0)),

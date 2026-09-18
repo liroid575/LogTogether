@@ -55,7 +55,7 @@ test("redirect fallback is persisted and consumed explicitly", async () => {
   assert.match(client, /getRedirectResult/);
   assert.match(main, /consumeGoogleRedirectSignIn/);
   assert.match(main, /Finishing Google sign-in and checking Cloud access/);
-  assert.match(main, /PENDING_INVITE_SESSION_KEY/);
+  assert.match(main, /PENDING_INVITE_SESSION_SLOT/);
 });
 
 test("tracked config does not hardcode a Firebase Hosting origin", async () => {

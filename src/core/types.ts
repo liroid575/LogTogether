@@ -47,6 +47,8 @@ export interface SetEntry {
   reps?: number;
   durationSec?: number;
   targetWorkSec?: number;
+  actualDurationSec?: number;
+  timerTargetSec?: number;
   distanceKm?: number;
   completed: boolean;
   skipped?: boolean;
@@ -204,6 +206,8 @@ export interface GoalConfig {
   difficulty?: GoalDifficulty;
   difficultyWeek?: string;
   difficultyChanges?: number;
+  weeklyPlans?: Record<string, { difficulty: GoalDifficulty; personalActivityId: NonNullable<GoalConfig["personalActivityId"]> }>;
+  legacyPlan?: { difficulty: GoalDifficulty; personalActivityId: NonNullable<GoalConfig["personalActivityId"]> };
   personalActivityId?: "any" | "hiking" | "swimming" | "running" | "cycling" | "kickboxing" | "jump_rope";
 }
 export interface StoryRecord { id: string; ownerId: string; familyId: string; mediaId: string; createdAt: string; expiresAt: string; caption?: string; }
@@ -273,6 +277,7 @@ export interface AppState {
     profileDirty?: boolean;
     profileCloudMigrated?: boolean;
     hydrationDirtyDates?: string[];
+    familyDirtyDates?: string[];
     hydrationCloudMigrated?: boolean;
     supplementDirtyDates?: string[];
     supplementCloudMigrated?: boolean;

@@ -21,12 +21,12 @@ await test("notification defaults migrate on once and explicit device disable is
   assert.match(main, /permission === "granted" && !status\.subscribed && !manuallyDisabled/);
 });
 
-await test("Gold Days use one immutable daily social event instead of the v0.11 weekly trigger", async () => {
+await test("Gold Days use one reconcilable daily social event instead of the v0.11 weekly trigger", async () => {
   const fn = await text("functions/index.js");
   assert.match(fn, /exports\.onFamilyDailyChanged/);
   assert.doesNotMatch(fn, /exports\.onFamilyWeeklyChanged/);
-  assert.match(fn, /`gold_\$\{after\.ownerId\}_\$\{after\.date\}`/);
-  assert.match(fn, /claimSocialEvent\(eventId/);
+  assert.match(fn, /`gold_\$\{identity\.ownerId\}_\$\{identity\.date\}`/);
+  assert.match(fn, /reconcileGoldReward\(ledgerSnap/);
 });
 
 await test("Pokes cap at seven and enforce server-side mute plus recipient flood control", async () => {
