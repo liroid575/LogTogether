@@ -358,10 +358,12 @@ function matchesPersonalActivity(workout: WorkoutRecord, selection: GoalConfig["
     const id=def.id;
     if (selection === "swimming" && group === "swimming") return true;
     if (selection === "kickboxing" && group === "kickboxing") return true;
-    if (selection === "jump_rope" && id.startsWith("jump_rope_")) return true;
+    // Jump rope remains valid cardio, but v0.13 no longer presents it as a
+    // broad chosen-sport mission. The legacy value stays readable and earns no
+    // new chosen-activity credit until the user chooses a supported activity.
     if (selection === "running" && ["run","trail_running","sprinting","treadmill","stair_running"].includes(id)) return true;
     if (selection === "cycling" && ["cycling","stationary_bike"].includes(id)) return true;
-    if (!selection || selection === "any") return true;
+    if (!selection || selection === "none" || selection === "any" || selection === "jump_rope") return false;
   }
   return false;
 }
@@ -389,7 +391,7 @@ export function scienceWeekMetrics(workouts: WorkoutRecord[], hikes: HikeRecord[
   let cardioMinutes=0, mobilityMinutes=0, balanceMinutes=0;
   const personalDates = new Set<string>();
   goals = goalsForWeek(goals, weekKey(now));
-  const selection=goals.personalActivityId ?? "any";
+  const selection=goals.personalActivityId ?? "none";
 
   for (const workout of workouts) {
     if(!workout.completedAt) continue;
@@ -415,7 +417,7 @@ export function scienceWeekMetrics(workouts: WorkoutRecord[], hikes: HikeRecord[
 
   const hikeDays=hikes.filter(hike=>{const d=new Date(`${hike.date}T12:00:00`); return d>=start&&d<end;});
   cardioMinutes += hikeDays.reduce((sum,hike)=>sum+Math.max(0,hike.movingMinutes),0);
-  if(selection==="hiking"||selection==="any") hikeDays.filter(hike=>hike.movingMinutes>0).forEach(hike=>personalDates.add(hike.date));
+  if(selection==="hiking") hikeDays.filter(hike=>hike.movingMinutes>0).forEach(hike=>personalDates.add(hike.date));
 
   const goldDates=new Set<string>();
   for(let i=0;i<7;i++){const d=new Date(start); d.setDate(start.getDate()+i); const key=localDateKey(d); if(meaningfulActivityScoreOnDate(workouts,hikes,key)>=1) goldDates.add(key);}

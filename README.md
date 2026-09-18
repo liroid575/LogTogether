@@ -10,7 +10,7 @@ The project gradually grew into a bilingual family fitness PWA with structured w
 
 LogTogether is currently a **family-testing alpha**.
 
-The current application version is **v0.12.0**. It is actively used for family-oriented testing, but it is not yet presented as a public production service.
+The current application version is **v0.13.0**. It is actively used for family-oriented testing, but it is not yet presented as a public production service.
 
 The project favors:
 
@@ -56,7 +56,7 @@ The project favors:
 - Supplement logging.
 - Custom supplements and brands.
 - Weekly supplement review with a Monday-to-Sunday recorded-day view and exact entry details.
-- Exact supplement records remain private rather than being exposed to family members.
+- Exact supplement documents remain owner-only. When weekly supplement sharing is enabled, family members receive bounded date, local-time and amount details without internal entry IDs or full ISO timestamps.
 
 ### Hiking
 
@@ -141,7 +141,7 @@ A developer cloning LogTogether should configure their **own Firebase developmen
 
 LogTogether deliberately separates records according to who should be able to access them.
 
-Personal body metrics, exact supplement entries, hydration details, account settings, local media, and other sensitive records are not treated as ordinary family-visible data.
+Personal body metrics, owner-only supplement documents, hydration details, account settings, local media, and other sensitive records are not treated as ordinary family-visible data.
 
 Family features instead use explicitly shared records or bounded aggregate documents where appropriate.
 
@@ -150,7 +150,7 @@ Examples include:
 - workout sharing that respects visibility and family membership;
 - family progress summaries without raw private workout data;
 - hydration totals without exposing individual drink timestamps;
-- supplement totals without exposing exact supplement history;
+- bounded weekly supplement totals plus shared date/local-time/amount details, without exposing owner-only entry documents;
 - hiking metadata without automatically uploading precise GPX routes.
 
 Firebase browser configuration is client-visible by design and is **not** an authorization mechanism.
@@ -572,6 +572,10 @@ It focuses mainly on presentation and large-family behavior:
 - clearer emphasis on custom-supplement management.
 
 The release does not intentionally change the core Firestore authorization model or exercise-science model introduced in earlier versions.
+
+### v0.13.0 — family comparison and workout polish
+
+v0.13.0 adds expandable family workout and supplement details, a cleaner choose-first saved-routine manager, corrected Chosen Activity mission semantics, practical jump-rope placement, full-image history viewing, and an iPhone workout-input mitigation for Shake to Undo. It also adds a deployment check that preserves the configured Google Forms responder link. See [`docs/releases/V0.13.0.md`](docs/releases/V0.13.0.md) for the full behavior, privacy boundaries, compatibility notes, and verification record.
 
 ### v0.12.0 — family-test reliability and clarity
 

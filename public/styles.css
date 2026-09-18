@@ -457,7 +457,7 @@ svg { width: 1.15em; height: 1.15em; }
 
 .day-photos { display:flex; gap:8px; overflow-x:auto; margin-top:12px; padding-bottom:2px; }
 .history-photo-thumb { width:66px; height:66px; object-fit:cover; border-radius:10px; border:1px solid var(--line); flex:0 0 auto; }
-.history-photo { width:100%; max-height:300px; object-fit:cover; border-radius:12px; margin-bottom:12px; border:1px solid var(--line); }
+.history-photo { width:100%; height:auto; max-height:min(70vh,640px); object-fit:contain; border-radius:12px; border:1px solid var(--line); background:#080b0d; }
 .workout-photo-preview { width:88px; height:88px; object-fit:cover; border-radius:12px; border:1px solid var(--line); }
 .media-upload-card { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; }
 .file-button { position:relative; overflow:hidden; cursor:pointer; }
@@ -3214,6 +3214,38 @@ html.rest-alert-flash #rest-timer { animation:rest-complete-pulse .9s ease-out; 
 .routine-order,.routine-editor-actions { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
 .routine-editor-set { padding:12px 0; border-bottom:1px solid var(--border); }
 .routine-editor .btn { min-height:44px; }
+
+/* v0.13.0 progressive routine management, family detail, and photo viewing */
+.routine-manager-picker { margin-top:14px; }
+.routine-manager-selected { display:grid; gap:12px; margin:12px 0; padding:14px; border:1px solid var(--border); border-radius:14px; background:var(--surface-2); }
+.routine-manager-selected > div:first-child { display:grid; gap:4px; }
+.routine-manager-selected span { color:var(--muted); font-size:12px; }
+.routine-manager-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.routine-manager-actions .btn { min-height:44px; flex:1 1 90px; }
+.routine-bulk-toggle { margin-top:10px; }
+.routine-bulk-list { display:grid; gap:8px; margin-top:10px; padding:12px; border:1px solid var(--border); border-radius:12px; }
+.routine-bulk-list label { display:flex; align-items:center; gap:10px; min-height:44px; }
+.routine-bulk-list input { width:22px; height:22px; }
+.supplement-time-lines { line-height:1.75; font-variant-numeric:tabular-nums; }
+.family-supplement-row { display:block; }
+.family-supplement-row > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; list-style:none; }
+.family-supplement-row > summary::-webkit-details-marker { display:none; }
+.family-supplement-row > summary > div { min-width:0; display:grid; gap:3px; }
+.family-supplement-row > p { margin:9px 0 2px; padding:9px 10px; border-radius:9px; background:var(--surface-2); }
+.family-workout-row { display:block; }
+.family-workout-row > summary { display:grid; grid-template-columns:42px minmax(0,1fr) 24px; align-items:start; gap:10px; cursor:pointer; list-style:none; }
+.family-workout-row > summary::-webkit-details-marker { display:none; }
+.family-workout-row > summary > div { min-width:0; display:grid; gap:3px; }
+.family-workout-row[open] > summary .history-chevron { transform:rotate(180deg); }
+.family-workout-detail { display:grid; gap:12px; margin:12px 0 4px 52px; }
+.private-photo-button { display:block; padding:0; border:0; background:transparent; color:inherit; cursor:zoom-in; max-width:100%; }
+.history-details > .private-photo-button { width:100%; margin-bottom:12px; }
+.day-photos .private-photo-button { flex:0 0 auto; }
+.photo-lightbox-backdrop { position:fixed; inset:0; z-index:300; display:grid; place-items:center; padding:16px; background:rgba(0,0,0,.88); backdrop-filter:blur(5px); }
+.photo-lightbox { position:relative; width:min(96vw,1100px); height:min(90vh,900px); display:grid; place-items:center; }
+.photo-lightbox-image { width:100%; height:100%; object-fit:contain; }
+.photo-lightbox-close { position:absolute; z-index:1; top:8px; right:8px; width:48px; height:48px; border-radius:999px; border:1px solid rgba(255,255,255,.45); background:rgba(0,0,0,.72); color:#fff; font-size:30px; line-height:1; cursor:pointer; }
+@media (max-width:520px) { .family-workout-detail { margin-left:0; } }
 .set-row.compact-set-row, .session-set-row.compact-set-row {
   grid-template-columns:36px minmax(0,1fr) 44px; gap:10px; align-items:start;
 }

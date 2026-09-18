@@ -24,11 +24,13 @@ test("biological sex syncs privately in body metrics and publicly in active fami
   assert.match(main, /updateMyFamilyDisplayName[\s\S]*biologicalSex/);
 });
 
-test("supplement exact entries are own-device cloud data while family receives weekly totals", () => {
-  assert.match(rules, /Exact supplement timestamps[\s\S]*owner's devices/);
+test("supplement day documents stay owner-only while enabled family sharing publishes bounded weekly details", () => {
+  assert.match(rules, /match \/supplements\/\{supplementDayId\}[\s\S]*allow get, list: if signedIn\(\) && resource\.data\.ownerId == request\.auth\.uid/);
+  assert.match(rules, /supplementEntries\.size\(\) <= 100/);
+  assert.match(client, /export interface CloudWeeklySupplementEntry/);
   assert.match(main, /pushSupplementDayToCloud/);
   assert.match(main, /currentWeekFamilySummary/);
-  assert.match(main, /supplementMap/);
+  assert.match(main, /supplementEntries/);
 });
 
 test("hike deletion has cloud tombstones and route metadata stays local", () => {

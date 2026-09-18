@@ -61,7 +61,7 @@ Examples include:
 - account settings;
 - body metrics;
 - exact hydration records;
-- exact supplement entries;
+- owner-only exact supplement documents; the optional family weekly view receives only bounded date/local-time/amount details without entry IDs or full ISO timestamps;
 - private workout records;
 - precise hiking route data;
 - local media.

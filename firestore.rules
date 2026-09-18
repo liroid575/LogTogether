@@ -279,7 +279,7 @@ service cloud.firestore {
     function validFamilyWeeklyCreate(data) {
       return signedIn()
         && data.keys().hasAll(['schemaVersion', 'ownerId', 'familyId', 'weekStart', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
-        && data.keys().hasOnly(['schemaVersion', 'ownerId', 'familyId', 'weekStart', 'difficulty', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
+        && data.keys().hasOnly(['schemaVersion', 'ownerId', 'familyId', 'weekStart', 'difficulty', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'supplementEntries', 'clientUpdatedAt', 'updatedAt'])
         && (!('difficulty' in data) || data.difficulty in ['easy', 'normal', 'hard', 'extreme'])
         && data.schemaVersion == 1
         && data.ownerId == request.auth.uid
@@ -296,6 +296,7 @@ service cloud.firestore {
         && data.missionScore is int && data.missionScore >= 0
         && data.missionMax is int && data.missionMax > 0
         && data.supplements is list && data.supplements.size() <= 50
+        && (!data.keys().hasAny(['supplementEntries']) || (data.supplementEntries is list && data.supplementEntries.size() <= 100))
         && data.clientUpdatedAt is string
         && data.updatedAt is timestamp;
     }
@@ -308,7 +309,7 @@ service cloud.firestore {
         && after.familyId == before.familyId
         && after.weekStart == before.weekStart
         && after.schemaVersion == before.schemaVersion
-        && after.diff(before).affectedKeys().hasOnly(['difficulty', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'clientUpdatedAt', 'updatedAt'])
+        && after.diff(before).affectedKeys().hasOnly(['difficulty', 'weeklyCalories', 'workoutCount', 'hikeCount', 'hikeKm', 'calorieDays', 'waterDays', 'categoriesHit', 'missionScore', 'missionMax', 'supplements', 'supplementEntries', 'clientUpdatedAt', 'updatedAt'])
         && (!('difficulty' in after) || after.difficulty in ['easy', 'normal', 'hard', 'extreme'])
         && after.weeklyCalories is int && after.weeklyCalories >= 0
         && after.workoutCount is int && after.workoutCount >= 0
@@ -320,6 +321,7 @@ service cloud.firestore {
         && after.missionScore is int && after.missionScore >= 0
         && after.missionMax is int && after.missionMax > 0
         && after.supplements is list && after.supplements.size() <= 50
+        && (!after.keys().hasAny(['supplementEntries']) || (after.supplementEntries is list && after.supplementEntries.size() <= 100))
         && after.clientUpdatedAt is string
         && after.updatedAt is timestamp;
     }
@@ -597,9 +599,9 @@ service cloud.firestore {
     }
 
 
-    // Exact supplement timestamps and dose-style entry details sync across the
-    // owner's devices. Family members receive only the bounded weekly summary
-    // in familyWeekly, avoiding unnecessary exposure of per-entry timestamps.
+    // Exact supplement documents remain owner-only. When the user's family
+    // profile sharing switch is on, familyWeekly carries a bounded date/local-
+    // time/amount list without internal entry IDs or full ISO timestamps.
     match /supplements/{supplementDayId} {
       allow get, list: if signedIn() && resource.data.ownerId == request.auth.uid;
       allow create: if signedIn()
@@ -677,8 +679,8 @@ service cloud.firestore {
 
 
     // One bounded summary per user/week for family-visible achievements and
-    // supplement totals. Height, weight, exact supplement times and GPX points
-    // are intentionally absent from this document.
+    // supplement totals and, when supplement sharing is enabled, a bounded
+    // date/local-time entry list. Height, weight and GPX points remain absent.
     match /familyWeekly/{weeklyId} {
       allow get, list: if signedIn() && canSeeMember(resource.data.familyId, resource.data.ownerId);
       allow create: if validFamilyWeeklyCreate(request.resource.data);

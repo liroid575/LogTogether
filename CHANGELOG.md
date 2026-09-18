@@ -1,3 +1,15 @@
+## v0.13.0 — Family Comparison & Workout Polish
+
+- Added expandable date/time/amount supplement detail to personal weekly review and enabled family summaries.
+- Added expandable recent family workout set, duration, rest, load, effort, note, and circuit detail.
+- Reworked saved-routine management around an explicit chooser, compact top actions, and optional bulk deletion.
+- Corrected Chosen Activity Days so only one specifically selected supported activity earns progress.
+- Moved basic jump rope to Home / Functional and Single/Double Unders to Gym.
+- Preserved full history photos and added an enlarged lightbox.
+- Reduced iPhone Shake to Undo interruptions during workouts by releasing editable focus and blocking web undo events where supported.
+- Added a pre-deployment check for the private Firebase configuration and Google Forms feedback link.
+- Added backward-compatible bounded weekly supplement-detail sharing and Firestore rule coverage.
+
 ## v0.11.7 — Family Burst & Supplement UI Polish
 
 - Enlarged received-Poke rain particles while preserving the v0.11.6 Web Animations engine.

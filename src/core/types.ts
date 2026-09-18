@@ -208,7 +208,9 @@ export interface GoalConfig {
   difficultyChanges?: number;
   weeklyPlans?: Record<string, { difficulty: GoalDifficulty; personalActivityId: NonNullable<GoalConfig["personalActivityId"]> }>;
   legacyPlan?: { difficulty: GoalDifficulty; personalActivityId: NonNullable<GoalConfig["personalActivityId"]> };
-  personalActivityId?: "any" | "hiking" | "swimming" | "running" | "cycling" | "kickboxing" | "jump_rope";
+  // `any` and `jump_rope` remain readable for v0.12 backups and historical
+  // weekly plans. v0.13 migrates either value to `none` for the current week.
+  personalActivityId?: "none" | "any" | "hiking" | "swimming" | "running" | "cycling" | "kickboxing" | "jump_rope";
 }
 export interface StoryRecord { id: string; ownerId: string; familyId: string; mediaId: string; createdAt: string; expiresAt: string; caption?: string; }
 

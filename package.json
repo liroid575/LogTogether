@@ -1,6 +1,6 @@
 {
   "name": "logtogether",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "description": "Privacy-first bilingual family exercise tracker PWA",
@@ -9,6 +9,8 @@
   },
   "scripts": {
     "build": "bash scripts/build.sh",
+    "verify:deploy-config": "node scripts/verify-deploy-config.mjs",
+    "verify:live": "node scripts/verify-live-deployment.mjs",
     "serve": "python3 -m http.server 4173 -d dist",
     "test": "npm run build && node --test tests/unit/*.test.mjs",
     "test:security": "firebase emulators:exec --project demo-logtogether --only firestore \"node --test tests/security/*.test.mjs\"",

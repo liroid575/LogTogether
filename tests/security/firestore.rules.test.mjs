@@ -107,6 +107,9 @@ async function seed() {
       weeklyCalories: 420, workoutCount: 2, hikeCount: 1, hikeKm: 3.2,
       calorieDays: 2, waterDays: 3, categoriesHit: 4, missionScore: 9, missionMax: 22,
       supplements: [{ supplementId: "multivitamin", amount: 3, unit: "serving", entries: 3, days: 3, mixedUnits: false }],
+      supplementEntries: [
+        { date: "2026-09-13", time: "09:00", supplementId: "multivitamin", amount: 1, unit: "serving" }
+      ],
       clientUpdatedAt: "2026-09-13T01:00:00.000Z", updatedAt: nowTs()
     });
     await setDoc(doc(db, "bodyMetrics/m1"), {
@@ -282,11 +285,13 @@ test("owner can create and update only their own supplement day", async () => {
   await assertFails(updateDoc(doc(db, "supplements/alice_2026-09-13"), { entries: [] }));
 });
 
-test("same-family members can read weekly achievements and supplement totals", async () => {
+test("same-family members can read enabled weekly supplement details but not owner-only day documents", async () => {
   const snapshot = await assertSucceeds(getDoc(doc(auth("bob"), "familyWeekly/alice_2026-09-08")));
   assert.equal(snapshot.data()?.missionScore, 9);
   assert.equal(snapshot.data()?.hikeKm, 3.2);
   assert.equal(snapshot.data()?.supplements?.[0]?.supplementId, "multivitamin");
+  assert.equal(snapshot.data()?.supplementEntries?.[0]?.time, "09:00");
+  await assertFails(getDoc(doc(auth("bob"), "supplements/alice_2026-09-13")));
   await assertFails(getDoc(doc(auth("mallory"), "familyWeekly/alice_2026-09-08")));
 });
 
@@ -298,13 +303,14 @@ test("member can publish their own bounded weekly summary but not another member
     difficulty: "normal",
     weeklyCalories: 180, workoutCount: 1, hikeCount: 0, hikeKm: 0,
     calorieDays: 1, waterDays: 2, categoriesHit: 2, missionScore: 5, missionMax: 22,
-    supplements: [], clientUpdatedAt: "2026-09-13T04:00:00.000Z", updatedAt: nowTs()
+    supplements: [], supplementEntries: [], clientUpdatedAt: "2026-09-13T04:00:00.000Z", updatedAt: nowTs()
   }));
   await assertSucceeds(updateDoc(ref, {
     difficulty: "hard", weeklyCalories: 220, missionScore: 6,
     clientUpdatedAt: "2026-09-13T05:00:00.000Z", updatedAt: nowTs()
   }));
   await assertFails(updateDoc(ref, { difficulty: "unsafe" }));
+  await assertFails(updateDoc(ref, { supplementEntries: Array.from({ length: 101 }, () => ({ date: "2026-09-13", time: "09:00", supplementId: "vitamin_d" })) }));
   await assertFails(updateDoc(doc(db, "familyWeekly/alice_2026-09-08"), { missionScore: 22 }));
 });
 

@@ -4,11 +4,11 @@ import { readFile } from "node:fs/promises";
 
 const text = async path => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
-test("v0.11.7 versions the family burst UI shell", async () => {
+test("the current release versions the family burst UI shell", async () => {
   const [pkg, main, sw] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js")]);
-  assert.equal(JSON.parse(pkg).version, "0.12.0");
-  assert.match(main, /APP_VERSION = "0\.12\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.12\.0-timers-routines-rewards/);
+  assert.equal(JSON.parse(pkg).version, "0.13.0");
+  assert.match(main, /APP_VERSION = "0\.13\.0"/);
+  assert.match(sw, /logtogether-shell-v0\.13\.0-family-details-routines-photos/);
 });
 
 test("received Poke rain is substantially larger without changing the animation engine", async () => {

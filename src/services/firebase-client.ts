@@ -124,6 +124,15 @@ export interface CloudWeeklySupplementTotal {
   mixedUnits: boolean;
 }
 
+export interface CloudWeeklySupplementEntry {
+  date: string;
+  time: string;
+  supplementId: string;
+  customLabel?: string;
+  amount?: number;
+  unit?: SupplementUnit;
+}
+
 export interface CloudFamilyWeeklySummary {
   schemaVersion: 1;
   ownerId: string;
@@ -140,6 +149,7 @@ export interface CloudFamilyWeeklySummary {
   missionScore: number;
   missionMax: number;
   supplements: CloudWeeklySupplementTotal[];
+  supplementEntries: CloudWeeklySupplementEntry[];
   clientUpdatedAt: string;
 }
 
@@ -1197,6 +1207,16 @@ function parseFamilyWeekly(snapshot: any): CloudFamilyWeeklySummary {
     days: Math.max(0, Math.round(Number(item.days) || 0)),
     mixedUnits: item.mixedUnits === true
   })) : [];
+  const supplementEntries = Array.isArray(data.supplementEntries) ? data.supplementEntries.slice(0, 100)
+    .filter((item: any) => item && /^\d{4}-\d{2}-\d{2}$/.test(item.date) && /^\d{2}:\d{2}$/.test(item.time) && typeof item.supplementId === "string")
+    .map((item: any) => ({
+      date: item.date,
+      time: item.time,
+      supplementId: item.supplementId.slice(0, 120),
+      ...(typeof item.customLabel === "string" && item.customLabel.trim() ? {customLabel:item.customLabel.trim().slice(0,100)} : {}),
+      ...(Number.isFinite(item.amount) ? {amount:Math.max(0,Number(item.amount))} : {}),
+      ...(validUnits.has(item.unit) ? {unit:item.unit as SupplementUnit} : {})
+    })) : [];
   const calorieDays = Math.max(0, Math.min(7, Math.round(Number(data.calorieDays) || 0)));
   const waterDays = Math.max(0, Math.min(7, Math.round(Number(data.waterDays) || 0)));
   const categoriesHit = Math.max(0, Math.min(8, Math.round(Number(data.categoriesHit) || 0)));
@@ -1222,6 +1242,7 @@ function parseFamilyWeekly(snapshot: any): CloudFamilyWeeklySummary {
       : Math.max(0, Math.min(10, Math.round(Number(data.missionScore) || 0))),
     missionMax: 10,
     supplements,
+    supplementEntries,
     clientUpdatedAt: typeof data.clientUpdatedAt === "string" ? data.clientUpdatedAt : ""
   };
 }

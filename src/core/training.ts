@@ -24,7 +24,7 @@ export function goalsForWeek(goals: GoalConfig, key: string): GoalConfig {
   return plan ? {...goals, ...plan} : goals;
 }
 export function rememberWeekPlan(goals: GoalConfig, key: string): void {
-  goals.legacyPlan ??= {difficulty: goals.difficulty ?? "normal", personalActivityId: goals.personalActivityId ?? "any"};
+  goals.legacyPlan ??= {difficulty: goals.difficulty ?? "normal", personalActivityId: goals.personalActivityId ?? "none"};
   goals.weeklyPlans ??= {};
-  goals.weeklyPlans[key] = {difficulty: goals.difficulty ?? "normal", personalActivityId: goals.personalActivityId ?? "any"};
+  goals.weeklyPlans[key] = {difficulty: goals.difficulty ?? "normal", personalActivityId: goals.personalActivityId ?? "none"};
 }
