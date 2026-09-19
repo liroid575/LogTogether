@@ -1,5 +1,6 @@
 ## v0.15.0 — Reliability, Groups & Recording Polish
 
+- Hotfix: existing Cloud reconnects now survive hard reloads, grouped member queries explicitly match Firestore rule constraints, duplicate membership refreshes are coalesced, and the sign-in overlay no longer waits for the full Cloud sync. Service-worker cache: `logtogether-shell-v0.15.0-auth-hotfix1`.
 - Added verified-email-bound pending-invite recovery for browser-to-installed-PWA handoff while keeping opaque QR tokens as the preferred path.
 - Added realtime observation of the signed-in user's private Poke wallet without changing the Gold reward ledger/economy.
 - Added multi-group membership for ordinary family members with group-intersection authorization and owner-only atomic administration.

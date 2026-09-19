@@ -1,4 +1,4 @@
-const CACHE = "logtogether-shell-v0.15.0-reliability-groups-recording";
+const CACHE = "logtogether-shell-v0.15.0-auth-hotfix1";
 const SHELL = [
   "/",
   "/index.html",

@@ -600,7 +600,11 @@ export async function loadCloudMembership(user: FirebaseAuthUser): Promise<Cloud
       : firestoreModule.query(
           membersRef,
           firestoreModule.where("groupIds", "array-contains-any", groupIds),
-          firestoreModule.where("status", "==", "active")
+          firestoreModule.where("status", "==", "active"),
+          // Firestore rules are not filters. Constrain the query to ordinary
+          // members so the rule never has to consider an owner document whose
+          // shareGroupIds differ from the owner's own membership groups.
+          firestoreModule.where("role", "==", "member")
         );
     const [membersSnapshot, groupSnapshots] = await Promise.all([
       firestoreModule.getDocs(memberQuery),

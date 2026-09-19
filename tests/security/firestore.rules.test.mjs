@@ -680,6 +680,30 @@ test("v0.15 normal members can share more than one group without leaking to non-
   await assertFails(getDoc(doc(auth("frank"),"workouts/charlie-multi")));
 });
 
+test("v0.15 grouped member list query is rule-complete and excludes owner documents", async () => {
+  await env.withSecurityRulesDisabled(async context => {
+    const db=context.firestore();
+    await setDoc(doc(db,"families/family-a/groups/default"),{schemaVersion:1,name:"Family",createdAt:nowTs(),updatedAt:nowTs()});
+    await setDoc(doc(db,"families/family-a/groups/friends"),{schemaVersion:1,name:"Friends",createdAt:nowTs(),updatedAt:nowTs()});
+    await updateDoc(doc(db,"access/alice"),{groupId:"default",groupIds:["default"],shareGroupIds:["default"]});
+    await updateDoc(doc(db,"families/family-a/members/alice"),{groupId:"default",groupIds:["default"],shareGroupIds:["default"]});
+    await updateDoc(doc(db,"access/bob"),{groupId:"default",groupIds:["default","friends"]});
+    await updateDoc(doc(db,"families/family-a/members/bob"),{groupId:"default",groupIds:["default","friends"]});
+    await updateDoc(doc(db,"access/charlie"),{groupId:"friends",groupIds:["friends"]});
+    await updateDoc(doc(db,"families/family-a/members/charlie"),{groupId:"friends",groupIds:["friends"]});
+  });
+
+  const bob = auth("bob");
+  const snapshot = await assertSucceeds(getDocs(query(
+    collection(bob,"families/family-a/members"),
+    where("groupIds","array-contains-any",["default","friends"]),
+    where("status","==","active"),
+    where("role","==","member")
+  )));
+  const ids = snapshot.docs.map(item=>item.id).sort();
+  assert.deepEqual(ids,["bob","charlie"]);
+});
+
 test("members cannot self-add a secondary group and owner must mirror group arrays atomically", async () => {
   await env.withSecurityRulesDisabled(async context => {
     const db=context.firestore();

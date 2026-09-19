@@ -23,6 +23,7 @@ await test("multi-group membership is additive, bounded and keeps owner sharing 
   const [client, rules] = await Promise.all([text("src/services/firebase-client.ts"), text("firestore.rules")]);
   assert.match(client, /groupIds: string\[\]/);
   assert.match(client, /array-contains-any/);
+  assert.match(client, /where\("role", "==", "member"\)/);
   assert.match(client, /setFamilyMemberGroups/);
   assert.match(client, /groupIds\.length\) throw new Error\("A Cloud member must belong to at least one group/);
   assert.match(rules, /groupIdsFor\(get\(accessPath\(uid\)\)\.data\)\.hasAny\(groupIdsFor\(myAccess\(\)\.data\)\)/);
@@ -95,10 +96,25 @@ await test("completed-activity logging starts from actual blank values and expos
   assert.match(main, /knownSessionMinutes>0 \? new Date\(completedAt\.getTime\(\)-knownSessionMinutes\*60000\) : completedAt/);
 });
 
+
+await test("Cloud reconnect survives hard reloads and never blocks sign-in on full sync", async () => {
+  const main = await text("src/main.ts");
+  assert.match(main, /CLOUD_RECONNECT_SLOT/);
+  assert.match(main, /cloudReconnectRequested\(\)/);
+  assert.match(main, /rememberCloudReconnectRequest\(\)/);
+  assert.match(main, /clearCloudReconnectRequest\(\)/);
+  assert.match(main, /cloudMembershipRefreshPromise/);
+  assert.match(main, /withTimeout/);
+  assert.match(main, /20_000/);
+  assert.match(main, /Cloud authorization is complete at this point/);
+  assert.match(main, /this\.authInteractiveStatus = null;\n      this\.render\(\);/);
+  assert.match(main, /data-action="retry-cloud-auth"/);
+});
+
 await test("v0.15 version and service-worker cache are explicit", async () => {
   const [pkg, main, sw, verify] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js"), text("scripts/verify-live-deployment.mjs")]);
   assert.equal(JSON.parse(pkg).version, "0.15.0");
   assert.match(main, /APP_VERSION = "0\.15\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.15\.0-reliability-groups-recording/);
+  assert.match(sw, /logtogether-shell-v0\.15\.0-auth-hotfix1/);
   assert.match(verify, /v0\.15\.0/);
 });

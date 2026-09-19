@@ -54,6 +54,22 @@ if (!root) throw new Error("Missing #app root");
 
 const PENDING_INVITE_SESSION_SLOT = "logtogether-pending-invite-v0117";
 const PENDING_INVITE_LOCAL_SLOT = "logtogether-pending-invite-v0140";
+const CLOUD_RECONNECT_SLOT = "logtogether-cloud-reconnect-v0150";
+
+function cloudReconnectRequested(): boolean {
+  try { return localStorage.getItem(CLOUD_RECONNECT_SLOT) === "1"; }
+  catch { return false; }
+}
+
+function rememberCloudReconnectRequest(): void {
+  try { localStorage.setItem(CLOUD_RECONNECT_SLOT, "1"); }
+  catch { /* Best effort: the current session can still continue. */ }
+}
+
+function clearCloudReconnectRequest(): void {
+  try { localStorage.removeItem(CLOUD_RECONNECT_SLOT); }
+  catch { /* Best effort only. */ }
+}
 
 function inviteCodeFromLocation(): string | null {
   try {
@@ -90,6 +106,18 @@ function escapeHtml(value: unknown): string {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer = 0;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 function formatBytes(bytes: number): string {
@@ -248,6 +276,7 @@ class FamilyExerciseApp {
   private authInteractiveStatus: "connecting" | "redirecting" | "finishing" | null = null;
   private cloudMembership: CloudMembership | null = null;
   private cloudMembershipReady = true;
+  private cloudMembershipRefreshPromise: Promise<void> | null = null;
   private pendingInviteCode: string | null = null;
   private installPrompt: any = null;
   private cloudAccessRequested = false;
@@ -320,7 +349,10 @@ class FamilyExerciseApp {
     this.pendingInviteCode = inviteCode;
     if (inviteCode) this.page = "settings";
     this.authInteractiveStatus = googleSignInRedirectPending() ? "finishing" : null;
-    this.cloudAccessRequested = Boolean(inviteCode || offlineAccount || this.authInteractiveStatus);
+    // A user-initiated reconnect survives a hard reload until active Cloud access
+    // is confirmed. This avoids dropping back to anonymous Local mode if the
+    // popup succeeds but a Firestore membership check is temporarily delayed.
+    this.cloudAccessRequested = Boolean(inviteCode || offlineAccount || this.authInteractiveStatus || cloudReconnectRequested());
     this.ensureExtendedState();
     this.restoreRestFromActiveWorkout();
     this.persist();
@@ -550,6 +582,7 @@ class FamilyExerciseApp {
   }
 
   private async detachCloudSession(message?: string): Promise<void> {
+    clearCloudReconnectRequest();
     forgetRememberedOfflineAccount();
     this.offlineAccount = null;
     rememberLocalScope(this.localScope || "guest");
@@ -562,13 +595,27 @@ class FamilyExerciseApp {
     if (!this.pendingInviteCode) this.cloudAccessRequested = false;
   }
 
-  private async refreshCloudMembership(user: FirebaseAuthUser = this.authUser!): Promise<void> {
-    if (!user) return;
+  private refreshCloudMembership(user: FirebaseAuthUser = this.authUser!): Promise<void> {
+    if (!user) return Promise.resolve();
+    if (this.cloudMembershipRefreshPromise) return this.cloudMembershipRefreshPromise;
+    const promise = this.performCloudMembershipRefresh(user);
+    this.cloudMembershipRefreshPromise = promise;
+    void promise.finally(() => {
+      if (this.cloudMembershipRefreshPromise === promise) this.cloudMembershipRefreshPromise = null;
+    });
+    return promise;
+  }
+
+  private async performCloudMembershipRefresh(user: FirebaseAuthUser): Promise<void> {
     this.cloudMembershipReady = false;
     this.cloudMembershipError = null;
     this.render();
     try {
-      let membership = await loadCloudMembership(user);
+      let membership = await withTimeout(
+        loadCloudMembership(user),
+        20_000,
+        this.locale === "zh-TW" ? "Cloud 授權檢查逾時。你的本機資料沒有變更；請按「重試 Cloud 連線」。" : "Cloud authorization check timed out. Your Local data was not changed; use Retry Cloud connection."
+      );
       let claimedNow = false;
       let recoveredInvite = false;
       if (!membership && this.pendingInviteCode) {
@@ -579,7 +626,11 @@ class FamilyExerciseApp {
         // is separate from Safari. If the QR token was opened in Safari before
         // installation, recover the pending invite from the verified Google email
         // instead of pretending browser localStorage can cross that boundary.
-        const recoverable = await findRecoverableFamilyInvites(user);
+        const recoverable = await withTimeout(
+          findRecoverableFamilyInvites(user),
+          20_000,
+          this.locale === "zh-TW" ? "Cloud 邀請檢查逾時。請確認網路後再試一次。" : "Cloud invitation lookup timed out. Check the network and try again."
+        );
         if (recoverable.length === 1) {
           membership = await claimFamilyInvite(user, recoverable[0]!.id);
           claimedNow = true;
@@ -609,6 +660,7 @@ class FamilyExerciseApp {
       // identity as approved for future Cloud/offline boot. Random public users
       // therefore never leave a Firebase-auth marker behind.
       this.offlineAccount = rememberOfflineAccount(user, true);
+      clearCloudReconnectRequest();
       this.cloudAccessRequested = true;
 
       if (claimedNow) {
@@ -623,14 +675,25 @@ class FamilyExerciseApp {
         history.replaceState(null, "", `${location.pathname}${location.search}`);
       }
 
-      membership = await seedGoogleMemberIdentity(user, membership);
+      // Cloud authorization is complete at this point. Do not keep the blocking
+      // “Almost there…” modal tied to profile seeding or the much larger sync.
+      // A slow Firestore collection must never look like a failed Google login.
       this.cloudMembership = membership;
       this.seedLocalIdentity(user, membership);
+      this.authInteractiveStatus = null;
+      this.render();
+
+      try {
+        membership = await seedGoogleMemberIdentity(user, membership);
+        this.cloudMembership = membership;
+        this.seedLocalIdentity(user, membership);
+      } catch (error) {
+        // Identity decoration is non-critical once active access is proven.
+        console.warn("Firebase member identity seed:", error);
+      }
       void this.ensurePokeWalletObserver();
       if (recoveredInvite) this.toast(this.locale === "zh-TW" ? "已在安裝版 LogTogether 找回並接受你的 Cloud 邀請" : "Cloud invitation recovered and accepted in the installed LogTogether app");
       // Social events are session-global, not tied to visiting Family/Settings.
-      // Start the private inbox listener as soon as Cloud membership is valid so
-      // Pokes can celebrate on Home, Workout, Water, History or Settings too.
       void this.ensureSocialInboxObserver();
       await this.syncCloudWorkouts(user, membership);
       await this.syncCloudHikes(user, membership);
@@ -641,6 +704,7 @@ class FamilyExerciseApp {
         this.persist();
       }
     } catch (error) {
+      this.authInteractiveStatus = null;
       this.cloudMembershipError = this.cloudErrorMessage(error);
       console.warn("Firebase family membership:", error);
       // A failed invite attempt should not leave a random Google account signed
@@ -1535,6 +1599,11 @@ class FamilyExerciseApp {
           ? (this.locale === "zh-TW" ? "正在開啟安全的 Google 登入頁面…" : "Opening secure Google sign-in…")
           : (this.locale === "zh-TW" ? "正在檢查授權…" : "Checking authorization…");
       return `<div><strong>${this.locale === "zh-TW" ? "Cloud 存取" : "Cloud access"}</strong><span>${escapeHtml(status)}</span></div>`;
+    }
+    if (this.authUser && !activeCloud) {
+      const label = this.authUser.displayName || this.authUser.email || this.authUser.uid;
+      const error = this.cloudMembershipError || this.authError;
+      return `<div class="auth-setting"><div class="auth-identity">${this.authUser.photoURL ? `<img class="auth-avatar" src="${escapeHtml(this.authUser.photoURL)}" alt="">` : ""}<div><strong>${escapeHtml(label)}</strong><span>${this.locale === "zh-TW" ? "Google 已登入；Cloud 連線尚未完成。" : "Google is signed in; Cloud connection is not complete yet."}</span>${error ? `<small class="danger-text">${escapeHtml(error)}</small>` : ""}</div></div><div class="auth-retry-actions"><button class="btn small primary" data-action="retry-cloud-auth">${this.locale === "zh-TW" ? "重試 Cloud 連線" : "Retry Cloud connection"}</button><button class="btn small ghost" data-action="google-sign-out">${this.locale === "zh-TW" ? "切換為 Local" : "Switch to Local"}</button></div></div>`;
     }
     if (this.pendingInviteCode) {
       const error = this.authError || this.cloudMembershipError;
@@ -4584,6 +4653,7 @@ class FamilyExerciseApp {
     });
     root.querySelectorAll<HTMLElement>('[data-action="google-sign-in"]').forEach(node => node.addEventListener("click", async () => {
       if (this.authInteractiveStatus) return;
+      rememberCloudReconnectRequest();
       this.cloudAccessRequested = true;
       this.authError = null;
       this.cloudMembershipError = null;
@@ -4607,7 +4677,21 @@ class FamilyExerciseApp {
         this.render();
       }
     }));
+    root.querySelector('[data-action="retry-cloud-auth"]')?.addEventListener("click", () => {
+      if (!this.authUser || this.authInteractiveStatus) return;
+      rememberCloudReconnectRequest();
+      this.cloudAccessRequested = true;
+      this.cloudMembershipError = null;
+      this.authError = null;
+      this.authInteractiveStatus = "finishing";
+      this.render();
+      void this.refreshCloudMembership(this.authUser).finally(() => {
+        this.authInteractiveStatus = null;
+        this.render();
+      });
+    });
     root.querySelector('[data-action="google-sign-out"]')?.addEventListener("click", async () => {
+      clearCloudReconnectRequest();
       forgetRememberedOfflineAccount();
       this.offlineAccount = null;
       rememberLocalScope(this.localScope || "guest");
