@@ -1,4 +1,4 @@
-const CACHE = "logtogether-shell-v0.15.0-auth-hotfix2";
+const CACHE = "logtogether-shell-v0.15.0-notify-hotfix4";
 const SHELL = [
   "/",
   "/index.html",

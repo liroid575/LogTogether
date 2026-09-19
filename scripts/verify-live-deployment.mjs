@@ -27,7 +27,7 @@ const expectedFormHash = "cce128118fb897605224d241c7630f79ad399ffc0e17d9e3490376
 if (createHash("sha256").update(canonicalFormUrl).digest("hex") !== expectedFormHash) {
   throw new Error("The deployed feedback link is not the approved LogTogether form.");
 }
-if (!serviceWorker.includes("logtogether-shell-v0.15.0-auth-hotfix2")) {
+if (!serviceWorker.includes("logtogether-shell-v0.15.0-notify-hotfix4")) {
   throw new Error("The deployed service worker is not v0.15.0.");
 }
 if (!main.includes('APP_VERSION = "0.15.0"')) {

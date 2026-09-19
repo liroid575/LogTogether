@@ -128,10 +128,35 @@ await test("iPhone and iPad auth uses redirect-first handoff with persisted-stat
   assert.match(main, /visibilityState === "visible"/);
 });
 
+
+await test("notification onboarding and push setup cannot hang on service-worker readiness", async () => {
+  const [client, main] = await Promise.all([text("src/services/firebase-client.ts"), text("src/main.ts")]);
+  assert.match(client, /PUSH_SERVICE_WORKER_WAIT_MS = 6_000/);
+  assert.match(client, /activePushServiceWorkerRegistration/);
+  assert.match(client, /navigator\.serviceWorker\.getRegistration/);
+  assert.match(client, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
+  assert.match(client, /Promise\.race/);
+  assert.match(client, /activePushServiceWorkerRegistration\(2_500\)/);
+  assert.doesNotMatch(client, /const registration = await navigator\.serviceWorker\.ready;/);
+  assert.match(main, /const enableRequest=enablePushNotifications\(this\.authUser,this\.cloudMembership\);\n    this\.render\(\);/);
+  assert.match(main, /void this\.maybeShowFamilyNotificationPrompt\(\)/);
+});
+
+await test("Family Compare never waits indefinitely for full private companion reconciliation", async () => {
+  const main = await text("src/main.ts");
+  assert.match(main, /Cloud family data took too long to load/);
+  assert.match(main, /Family comparison is read-only UI and must not wait for migrations/);
+  assert.match(main, /this\.cloudFamilyDaily=snapshot\.familyDaily;[\s\S]*this\.cloudCompanionReady=true;[\s\S]*this\.render\(\);/);
+  assert.match(main, /Family progress update timed out; local data is still safe/);
+  assert.match(main, /Refreshing family data in the background; showing the latest available snapshot/);
+  assert.match(main, /void this\.refreshPushAndPokeState\(false\)/);
+  assert.match(main, /older weekly summary with totals only/);
+});
+
 await test("v0.15 version and service-worker cache are explicit", async () => {
   const [pkg, main, sw, verify] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js"), text("scripts/verify-live-deployment.mjs")]);
   assert.equal(JSON.parse(pkg).version, "0.15.0");
   assert.match(main, /APP_VERSION = "0\.15\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.15\.0-auth-hotfix2/);
+  assert.match(sw, /logtogether-shell-v0\.15\.0-notify-hotfix4/);
   assert.match(verify, /v0\.15\.0/);
 });

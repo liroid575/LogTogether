@@ -1581,11 +1581,34 @@ export async function observeSocialInbox(
   }, (error:any) => { console.warn("Social inbox:", error); callback([]); });
 }
 
+const PUSH_SERVICE_WORKER_WAIT_MS = 6_000;
+
+async function activePushServiceWorkerRegistration(timeoutMs = PUSH_SERVICE_WORKER_WAIT_MS): Promise<ServiceWorkerRegistration | null> {
+  if (!("serviceWorker" in navigator)) return null;
+  let registration = await navigator.serviceWorker.getRegistration().catch(()=>undefined);
+  if (registration?.active) return registration;
+  // Registration is idempotent and makes notification setup recover if the main
+  // shell registered the worker but WebKit has not activated it yet.
+  registration = await navigator.serviceWorker.register("/sw.js").catch(()=>registration);
+  if (registration?.active) return registration;
+  let timer = 0;
+  try {
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>(resolve => { timer = window.setTimeout(()=>resolve(null), timeoutMs); })
+    ]);
+  } finally {
+    if (timer) window.clearTimeout(timer);
+  }
+}
+
 export async function pushRegistrationStatus(): Promise<PushRegistrationStatus> {
   const supported = typeof Notification !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
   const configured = Boolean(webPushKey());
   if (!supported) return { supported:false, configured, permission:"unsupported", subscribed:false };
-  const registration = await navigator.serviceWorker.ready.catch(()=>null);
+  // ServiceWorkerContainer.ready can wait forever when no active worker controls
+  // the page. A status probe must never be allowed to hide the onboarding prompt.
+  const registration = await activePushServiceWorkerRegistration(2_500);
   const subscription = registration ? await registration.pushManager.getSubscription().catch(()=>null) : null;
   return { supported:true, configured, permission:Notification.permission, subscribed:Boolean(subscription) };
 }
@@ -1596,9 +1619,12 @@ export async function enablePushNotifications(user: FirebaseAuthUser, membership
   const key=webPushKey();
   if (!key) throw new Error("Push notifications are not configured on this deployment.");
   if (typeof Notification === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("Push notifications are not supported on this device.");
+  // Keep this request at the start of the user-triggered path. WebKit requires
+  // notification permission/subscription to originate from a direct gesture.
   const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
   if (permission !== "granted") throw new Error("Notification permission was not granted.");
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await activePushServiceWorkerRegistration();
+  if (!registration) throw new Error("LogTogether's notification service is still starting. Close and reopen the app, then try Enable notifications again.");
   let subscription = await registration.pushManager.getSubscription();
   if (!subscription) {
     subscription = await registration.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:base64UrlToUint8Array(key) });
@@ -1618,7 +1644,7 @@ export async function enablePushNotifications(user: FirebaseAuthUser, membership
 export async function disablePushNotifications(user: FirebaseAuthUser): Promise<PushRegistrationStatus> {
   requireSignedInUser(user);
   if (typeof Notification === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return pushRegistrationStatus();
-  const registration=await navigator.serviceWorker.ready.catch(()=>null);
+  const registration=await activePushServiceWorkerRegistration(2_500);
   const subscription=registration ? await registration.pushManager.getSubscription().catch(()=>null) : null;
   if (subscription) {
     const db=await ensureFirestore();

@@ -1326,11 +1326,20 @@ class FamilyExerciseApp {
       this.state.sync ??= {};
       this.state.sync.hydrationDirtyDates ??= [];
       this.state.sync.supplementDirtyDates ??= [];
-      const snapshot=await loadCloudCompanionState(user,membership);
-      // Keep the just-loaded badge documents available before publishing so
-      // v0.7.3 can remove stale hiking badges left behind by older additive sync.
+      const snapshot=await withTimeout(
+        loadCloudCompanionState(user,membership),
+        20000,
+        this.locale === "zh-TW" ? "Cloud 家庭資料讀取逾時，請稍後重試。" : "Cloud family data took too long to load. Please retry."
+      );
+      // Family comparison is read-only UI and must not wait for migrations,
+      // summary publishing, badges, or push setup. Make the first authorized
+      // snapshot usable immediately, then continue the heavier reconciliation.
+      this.cloudFamilyDaily=snapshot.familyDaily;
+      this.cloudFamilyWeekly=snapshot.familyWeekly;
       this.cloudOwnBadges = snapshot.ownBadges;
       this.cloudFamilyBadges = snapshot.familyBadges;
+      this.cloudCompanionReady=true;
+      this.render();
       let syncedProfileSharing = this.familyProfileSharing();
       if (snapshot.preferences && !this.state.sync.preferencesDirty) {
         syncedProfileSharing = this.normalizeFamilyProfileSharing(snapshot.preferences.profileSharing);
@@ -1425,13 +1434,23 @@ class FamilyExerciseApp {
       this.state.sync.supplementDirtyDates = [...supplementDirty];
       this.applyCloudSupplements([...cloudSupplementDays.values()]);
 
-      await this.publishFamilyProgressAndBadges(user,membership);
-      const refreshed=await loadCloudCompanionState(user,membership);
+      await withTimeout(
+        this.publishFamilyProgressAndBadges(user,membership),
+        20000,
+        this.locale === "zh-TW" ? "家庭進度更新逾時；本機資料仍已保留。" : "Family progress update timed out; local data is still safe."
+      );
+      const refreshed=await withTimeout(
+        loadCloudCompanionState(user,membership),
+        20000,
+        this.locale === "zh-TW" ? "家庭進度重新整理逾時，請稍後再試。" : "Family progress refresh timed out. Please retry later."
+      );
       this.cloudFamilyDaily=refreshed.familyDaily;
       this.cloudFamilyWeekly=refreshed.familyWeekly;
       this.cloudFamilyBadges=refreshed.familyBadges;
       this.cloudOwnBadges=refreshed.ownBadges;
-      await this.refreshPushAndPokeState(false);
+      // Poke/push status is useful but must never hold the whole companion sync
+      // open. The realtime wallet observer remains the source of truth.
+      void this.refreshPushAndPokeState(false);
       this.persist();
     } catch(error) {
       this.cloudCompanionError=this.cloudErrorMessage(error);
@@ -2131,9 +2150,13 @@ class FamilyExerciseApp {
 
   private async enablePushForCurrentDevice(showToast = true): Promise<void> {
     if(!this.authUser || this.cloudMembership?.access.status!=="active" || this.pushBusy) return;
-    this.pushBusy=true; this.setPushManuallyDisabled(false); this.render();
+    this.pushBusy=true; this.setPushManuallyDisabled(false);
+    // Start permission/subscription work before rerendering. In iOS/iPadOS Home
+    // Screen apps Web Push must stay on the direct user-gesture call stack.
+    const enableRequest=enablePushNotifications(this.authUser,this.cloudMembership);
+    this.render();
     try {
-      this.pushStatus=await enablePushNotifications(this.authUser,this.cloudMembership);
+      this.pushStatus=await enableRequest;
       if(showToast) this.toast(this.locale === "zh-TW" ? "此裝置已啟用家庭通知" : "Family notifications enabled on this device");
     } catch(error) {
       this.toast(this.cloudErrorMessage(error));
@@ -3536,7 +3559,17 @@ class FamilyExerciseApp {
     const memberBadges = this.cloudFamilyBadges.filter(badge=>badge.ownerId===member.uid).slice();
     const monthlyBadges = memberBadges.filter(badge => badge.badgeType === "monthly").sort((a,b)=>b.earnedAt.localeCompare(a.earnedAt));
     const hikeBadges = memberBadges.filter(badge => badge.badgeType === "hike").sort((a,b)=>(a.sortOrder ?? 9999)-(b.sortOrder ?? 9999) || a.earnedAt.localeCompare(b.earnedAt));
-    const comparison = !this.cloudCompanionReady ? `<div class="small muted">${this.locale === "zh-TW" ? "正在同步家庭進度…" : "Syncing family progress…"}</div>` : this.cloudCompanionError ? `<div class="small danger-text">${escapeHtml(this.cloudCompanionError)}</div>` : this.renderFamilyComparison(member.uid,name);
+    const hasComparisonSnapshot = this.cloudFamilyDaily.some(item => item.ownerId === member.uid || item.ownerId === this.authUser?.uid)
+      || this.cloudFamilyWeekly.some(item => item.ownerId === member.uid || item.ownerId === this.authUser?.uid);
+    const comparisonRefreshNote = this.cloudCompanionBusy
+      ? `<div class="tiny muted">${this.locale === "zh-TW" ? "正在背景重新整理家庭資料；目前顯示最近一次可用資料。" : "Refreshing family data in the background; showing the latest available snapshot."}</div>`
+      : "";
+    const comparisonErrorNote = this.cloudCompanionError
+      ? `<div class="tiny danger-text">${escapeHtml(this.cloudCompanionError)}</div>`
+      : "";
+    const comparison = !this.cloudCompanionReady && !hasComparisonSnapshot
+      ? `<div class="small muted">${this.locale === "zh-TW" ? "正在同步家庭進度…" : "Syncing family progress…"}</div>`
+      : `${this.renderFamilyComparison(member.uid,name)}${comparisonRefreshNote}${comparisonErrorNote}`;
     const monthlyBadgeGrid = monthlyBadges.length ? `<div class="badge-gallery">${monthlyBadges.map(badge=>`<div class="earned-badge"><span>★</span><strong>${escapeHtml(badge.title)}</strong><small>${escapeHtml(badge.subtitle)}</small></div>`).join("")}</div>` : `<div class="empty-mini">${this.locale === "zh-TW" ? "目前沒有月度徽章。" : "No monthly badges yet."}</div>`;
     const hikeBadgeGrid = hikeBadges.length ? `<div class="badge-gallery hiking-gallery">${hikeBadges.map(badge=>`<div class="earned-badge hike-badge"><span>▲</span><strong>${escapeHtml(badge.title)}</strong><small>${escapeHtml(badge.subtitle)}</small></div>`).join("")}</div>` : `<div class="empty-mini">${this.locale === "zh-TW" ? "目前沒有健行徽章。" : "No hiking badges yet."}</div>`;
 
@@ -3564,6 +3597,9 @@ class FamilyExerciseApp {
         : `${item.amount.toLocaleString()} ${this.supplementUnitLabel(item.unit,item.amount)}`;
       return `<div class="supplement-week-row"><div><strong>${escapeHtml(this.supplementLabel(item.supplementId,item.customLabel))}</strong><span>${item.days} ${this.locale === "zh-TW" ? "天" : item.days===1 ? "day" : "days"} · ${item.entries} ${this.locale === "zh-TW" ? "次" : item.entries===1 ? "entry" : "entries"}</span></div><b>${escapeHtml(quantity)}</b></div>`;
     }).join("") : `<div class="empty-mini">${this.locale === "zh-TW" ? "這週沒有已同步的補充品紀錄。" : "No synced supplements this week."}</div>`);
+    const supplementCompatibilityNote = weekly?.supplements.length && !familySupplementEntries.length
+      ? `<div class="tiny muted family-details-note">${this.locale === "zh-TW" ? "這是較舊的每週摘要，只含總量。這位成員用 v0.15+ 成功同步後，當週會自動補上日期、時間與份量明細；其他家庭成員無法代替他重建私人逐筆紀錄。" : "This is an older weekly summary with totals only. After this member successfully syncs with v0.15+, the current week will automatically gain date, time and amount details. Other family members cannot reconstruct their private entry history for them."}</div>`
+      : "";
 
     const memberWorkouts = this.cloudFamilyWorkouts.filter(item => item.workout.ownerId === member.uid && item.workout.visibility === "family").slice().sort((a,b)=>(b.workout.completedAt ?? b.workout.startedAt).localeCompare(a.workout.completedAt ?? a.workout.startedAt)).slice(0,6);
     const workoutRows = memberWorkouts.length ? memberWorkouts.map((item,index) => {
@@ -3596,7 +3632,7 @@ class FamilyExerciseApp {
       ${pokeCard}
       <section class="section"><div class="section-header"><h2 class="section-title">${this.locale === "zh-TW" ? "本週比較" : "This week"}</h2><span class="section-value">${this.locale === "zh-TW" ? "家庭總量" : "Family totals"}</span></div><div class="card family-comparison-card">${comparison}</div></section>
       <section class="section"><div class="section-header"><h2 class="section-title">${this.locale === "zh-TW" ? "本週成就" : "Weekly achievements"}</h2><span class="section-value mission-score">${weekly ? `${weekly.missionScore}/${weekly.missionMax}` : "—"}</span></div><div class="card">${weeklyCard}</div></section>
-      ${sharing.supplements ? `<section class="section family-profile-collapsible"><details class="card family-profile-details"><summary><span>${this.locale === "zh-TW" ? "本週補充品" : "This week's supplements"}</span><span class="section-value">${weekly?.supplements.length ?? 0}</span></summary><div class="family-details-body family-supplement-list">${supplementRows}</div></details></section>` : ""}
+      ${sharing.supplements ? `<section class="section family-profile-collapsible"><details class="card family-profile-details"><summary><span>${this.locale === "zh-TW" ? "本週補充品" : "This week's supplements"}</span><span class="section-value">${weekly?.supplements.length ?? 0}</span></summary><div class="family-details-body family-supplement-list">${supplementRows}${supplementCompatibilityNote}</div></details></section>` : ""}
       ${sharing.recentWorkouts ? `<section class="section family-profile-collapsible"><details class="card family-profile-details"><summary><span>${this.locale === "zh-TW" ? "最近運動" : "Recent workouts"}</span><span class="section-value">${memberWorkouts.length}</span></summary><div class="family-details-body family-workout-list">${workoutRows}</div></details></section>` : ""}
       ${sharing.recentHikes ? `<section class="section family-profile-collapsible"><details class="card family-profile-details"><summary><span>${this.locale === "zh-TW" ? "最近健行" : "Recent hikes"}</span><span class="section-value">${memberHikes.length}</span></summary><div class="family-details-body family-hike-list">${hikeRows}</div><div class="tiny muted family-hike-privacy family-details-note">${this.locale === "zh-TW" ? "健行名稱、日期、距離、時間、海拔、難度與備註會同步給家庭；精確 GPX 路線與照片目前仍只留在自己的裝置。" : "Hike name, date, distance, time, elevation, difficulty and notes are shared with Family; exact GPX traces and photos remain on your own device for now."}</div></details></section>` : ""}
       <section class="section"><div class="section-header"><h2 class="section-title">${this.locale === "zh-TW" ? "月度徽章" : "Monthly badges"}</h2><span class="section-value">${monthlyBadges.length}</span></div><div class="card">${monthlyBadgeGrid}</div></section>
