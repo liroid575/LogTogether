@@ -107,14 +107,31 @@ await test("Cloud reconnect survives hard reloads and never blocks sign-in on fu
   assert.match(main, /withTimeout/);
   assert.match(main, /20_000/);
   assert.match(main, /Cloud authorization is complete at this point/);
-  assert.match(main, /this\.authInteractiveStatus = null;\n      this\.render\(\);/);
+  assert.match(main, /this\.authInteractiveStatus = null;\n      this\.clearAuthInteractiveWatchdog\(\);\n      this\.render\(\);/);
   assert.match(main, /data-action="retry-cloud-auth"/);
+});
+
+
+await test("iPhone and iPad auth uses redirect-first handoff with persisted-state recovery instead of an infinite popup wait", async () => {
+  const [client, main] = await Promise.all([text("src/services/firebase-client.ts"), text("src/main.ts")]);
+  assert.match(client, /appleMobileWebContext/);
+  assert.match(client, /iPad\|iPhone\|iPod/);
+  assert.match(client, /if \(appleMobileWebContext\(\)\)/);
+  assert.match(client, /signInWithRedirect/);
+  assert.match(client, /GOOGLE_REDIRECT_LOCAL_MARKER/);
+  assert.match(client, /GOOGLE_REDIRECT_MAX_AGE_MS/);
+  assert.match(client, /currentFirebaseAuthUser/);
+  assert.match(main, /Attach the persistent auth observer before consuming a redirect result/);
+  assert.ok(main.indexOf("await observeFirebaseAuth") < main.indexOf("consumeGoogleRedirectSignIn(),"));
+  assert.match(main, /recoverInteractiveGoogleSignIn/);
+  assert.match(main, /15_000/);
+  assert.match(main, /visibilityState === "visible"/);
 });
 
 await test("v0.15 version and service-worker cache are explicit", async () => {
   const [pkg, main, sw, verify] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js"), text("scripts/verify-live-deployment.mjs")]);
   assert.equal(JSON.parse(pkg).version, "0.15.0");
   assert.match(main, /APP_VERSION = "0\.15\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.15\.0-auth-hotfix1/);
+  assert.match(sw, /logtogether-shell-v0\.15\.0-auth-hotfix2/);
   assert.match(verify, /v0\.15\.0/);
 });

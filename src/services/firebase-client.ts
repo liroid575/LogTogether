@@ -25,6 +25,8 @@ declare global {
 const FIREBASE_VERSION = "12.19.0";
 const INVITE_LIFETIME_MS = 6 * 24 * 60 * 60 * 1000;
 const GOOGLE_REDIRECT_MARKER = "logtogether-google-redirect-pending-v0113";
+const GOOGLE_REDIRECT_LOCAL_MARKER = "logtogether-google-redirect-pending-v0150";
+const GOOGLE_REDIRECT_MAX_AGE_MS = 15 * 60 * 1000;
 
 type FirebaseRuntimeConfig = NonNullable<Window["__LOGTOGETHER_CONFIG__"]>;
 
@@ -498,9 +500,42 @@ export type GoogleSignInResult =
   | { mode: "popup"; user: FirebaseAuthUser }
   | { mode: "redirect" };
 
+function markGoogleRedirectPending(): void {
+  try { sessionStorage.setItem(GOOGLE_REDIRECT_MARKER, "1"); } catch { /* Redirect can still proceed. */ }
+  try { localStorage.setItem(GOOGLE_REDIRECT_LOCAL_MARKER, JSON.stringify({ savedAt: Date.now() })); } catch { /* Best effort only. */ }
+}
+
+export function clearGoogleRedirectSignInPending(): void {
+  try { sessionStorage.removeItem(GOOGLE_REDIRECT_MARKER); } catch { /* Best effort only. */ }
+  try { localStorage.removeItem(GOOGLE_REDIRECT_LOCAL_MARKER); } catch { /* Best effort only. */ }
+}
+
 export function googleSignInRedirectPending(): boolean {
-  try { return sessionStorage.getItem(GOOGLE_REDIRECT_MARKER) === "1"; }
-  catch { return false; }
+  try {
+    if (sessionStorage.getItem(GOOGLE_REDIRECT_MARKER) === "1") return true;
+  } catch { /* Fall through to the durable marker. */ }
+  try {
+    const raw = localStorage.getItem(GOOGLE_REDIRECT_LOCAL_MARKER);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { savedAt?: unknown };
+    const savedAt = Number(parsed?.savedAt ?? 0);
+    if (Number.isFinite(savedAt) && savedAt > 0 && Date.now() - savedAt <= GOOGLE_REDIRECT_MAX_AGE_MS) return true;
+    localStorage.removeItem(GOOGLE_REDIRECT_LOCAL_MARKER);
+  } catch { /* Malformed or unavailable storage is treated as no marker. */ }
+  return false;
+}
+
+export function appleMobileWebContext(): boolean {
+  const ua = navigator.userAgent ?? "";
+  const platform = navigator.platform ?? "";
+  return /iPad|iPhone|iPod/i.test(ua) || (/Mac/i.test(platform) && navigator.maxTouchPoints > 1);
+}
+
+export async function currentFirebaseAuthUser(): Promise<FirebaseAuthUser | null> {
+  const instance = await ensureAuth();
+  if (!instance || !authModule) return null;
+  if (typeof instance.authStateReady === "function") await instance.authStateReady();
+  return publicUser(instance.currentUser);
 }
 
 export async function consumeGoogleRedirectSignIn(): Promise<FirebaseAuthUser | null> {
@@ -511,7 +546,7 @@ export async function consumeGoogleRedirectSignIn(): Promise<FirebaseAuthUser | 
     const result = await authModule.getRedirectResult(instance);
     return publicUser(result?.user ?? instance.currentUser);
   } finally {
-    try { sessionStorage.removeItem(GOOGLE_REDIRECT_MARKER); } catch { /* Session storage can be unavailable in hardened browsers. */ }
+    clearGoogleRedirectSignInPending();
   }
 }
 
@@ -521,6 +556,24 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
 
   const provider = new authModule.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
+
+  // Firebase recommends redirect sign-in on mobile. iOS Home Screen web apps in
+  // particular can strand a popup result in an auxiliary Safari context: the
+  // Firebase session succeeds, but the standalone app never sees the popup
+  // Promise settle until a real page reload. Use a same-origin full-page
+  // redirect on iPhone/iPad instead. The durable marker survives a PWA process
+  // suspension while containing no identity, token, or invitation data.
+  if (appleMobileWebContext()) {
+    markGoogleRedirectPending();
+    try {
+      await authModule.signInWithRedirect(instance, provider);
+      return { mode: "redirect" };
+    } catch (error) {
+      clearGoogleRedirectSignInPending();
+      throw error;
+    }
+  }
+
   try {
     const credential = await authModule.signInWithPopup(instance, provider);
     const user = publicUser(credential?.user ?? instance.currentUser);
@@ -533,9 +586,14 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
       "auth/web-storage-unsupported"
     ]);
     if (redirectFallbackCodes.has(String(error?.code ?? ""))) {
-      try { sessionStorage.setItem(GOOGLE_REDIRECT_MARKER, "1"); } catch { /* Redirect can still proceed. */ }
-      await authModule.signInWithRedirect(instance, provider);
-      return { mode: "redirect" };
+      markGoogleRedirectPending();
+      try {
+        await authModule.signInWithRedirect(instance, provider);
+        return { mode: "redirect" };
+      } catch (redirectError) {
+        clearGoogleRedirectSignInPending();
+        throw redirectError;
+      }
     }
     throw error;
   }

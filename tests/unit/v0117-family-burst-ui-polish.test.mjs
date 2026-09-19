@@ -8,7 +8,7 @@ test("the current release versions the family burst UI shell", async () => {
   const [pkg, main, sw] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js")]);
   assert.equal(JSON.parse(pkg).version, "0.15.0");
   assert.match(main, /APP_VERSION = "0\.15\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.15\.0-auth-hotfix1/);
+  assert.match(sw, /logtogether-shell-v0\.15\.0-auth-hotfix2/);
 });
 
 test("received Poke rain is substantially larger without changing the animation engine", async () => {

@@ -7,7 +7,7 @@ import { clearLocalTestState, createBlankWorkout, createLocalBackup, forgetRemem
 import { diagnosticsJson } from "./core/diagnostics.js";
 import { familyPrivacySummary } from "./core/privacy.js";
 import type { AppState, CustomSupplement, ExerciseCategory, ExerciseDefinition, ExerciseLibraryGroup, FamilyProfileSharing, GoalDifficulty, HikeBadgePreference, HikeRecord, HydrationDay, Locale, NotificationPreferences, PersonalActivityId, ProfileData, SetEntry, SupplementEntry, SupplementUnit, WorkoutExerciseEntry, WorkoutRecord, WorkoutRoutine } from "./core/types.js";
-import { appCheckRuntimeStatus, claimFamilyInvite, cloudModeEnabled, createFamilyGroup, createFamilyInvite, DEFAULT_GROUP_ID, deleteCloudBadge, deleteCloudHike, deleteCloudWorkout, deleteFamilyGroup, disablePushNotifications, enablePushNotifications, ensureCloudGroupModel, findRecoverableFamilyInvites, loadCloudCompanionState, loadCloudHikes, loadCloudMembership, loadCloudWorkouts, loadPokeWallet, loadBackendDiagnostics, sendTestNotification, observeFirebaseAuth, observePokeWallet, consumeGoogleRedirectSignIn, googleSignInRedirectPending, observeSocialInbox, pushRegistrationStatus, renameFamilyGroup, saveCloudBadges, saveCloudBodyMetrics, saveCloudHike, saveCloudHydrationDay, saveCloudPreferences, saveCloudSupplementDay, saveCloudWorkout, saveFamilyDailySummary, saveFamilyWeeklySummary, seedGoogleMemberIdentity, sendPoke, setFamilyMemberAccessStatus, setFamilyMemberGroups, setOwnerShareGroups, updateMyFamilyDisplayName, signInWithGoogle, signOutFirebase } from "./services/firebase-client.js";
+import { appCheckRuntimeStatus, claimFamilyInvite, cloudModeEnabled, createFamilyGroup, createFamilyInvite, DEFAULT_GROUP_ID, deleteCloudBadge, deleteCloudHike, deleteCloudWorkout, deleteFamilyGroup, disablePushNotifications, enablePushNotifications, ensureCloudGroupModel, findRecoverableFamilyInvites, loadCloudCompanionState, loadCloudHikes, loadCloudMembership, loadCloudWorkouts, loadPokeWallet, loadBackendDiagnostics, sendTestNotification, observeFirebaseAuth, observePokeWallet, consumeGoogleRedirectSignIn, googleSignInRedirectPending, clearGoogleRedirectSignInPending, currentFirebaseAuthUser, observeSocialInbox, pushRegistrationStatus, renameFamilyGroup, saveCloudBadges, saveCloudBodyMetrics, saveCloudHike, saveCloudHydrationDay, saveCloudPreferences, saveCloudSupplementDay, saveCloudWorkout, saveFamilyDailySummary, saveFamilyWeeklySummary, seedGoogleMemberIdentity, sendPoke, setFamilyMemberAccessStatus, setFamilyMemberGroups, setOwnerShareGroups, updateMyFamilyDisplayName, signInWithGoogle, signOutFirebase } from "./services/firebase-client.js";
 import type { BackendDiagnostics, CloudBadgeRecord, CloudCompanionSnapshot, CloudFamilyDailySummary, CloudFamilyWeeklySummary, CloudHikeEnvelope, CloudMembership, CloudWorkoutEnvelope, CreatedFamilyInvite, FirebaseAuthUser, SocialInboxEvent } from "./services/firebase-client.js";
 import { clearPrivateImages, deletePrivateImage, getPrivateImage, savePrivateImage } from "./core/media.js";
 import { parseGpx } from "./core/gpx.js";
@@ -274,6 +274,7 @@ class FamilyExerciseApp {
   private authReady = true;
   private authError: string | null = null;
   private authInteractiveStatus: "connecting" | "redirecting" | "finishing" | null = null;
+  private authInteractiveWatchdog = 0;
   private cloudMembership: CloudMembership | null = null;
   private cloudMembershipReady = true;
   private cloudMembershipRefreshPromise: Promise<void> | null = null;
@@ -368,6 +369,10 @@ class FamilyExerciseApp {
         // and fire any deadline cue that has not already been acknowledged.
         this.updateRestTimerDisplay();
         this.drainVisualPresentationQueue();
+        // Some mobile OAuth surfaces return control before the popup Promise
+        // settles. Probe Firebase's persisted auth state after the app becomes
+        // visible instead of forcing the user to discover a manual refresh.
+        if (this.authInteractiveStatus) window.setTimeout(() => { void this.recoverInteractiveGoogleSignIn(false); }, 750);
       }
     });
     // iOS owns the Shake to Undo popup and does not expose its native switch to
@@ -530,17 +535,35 @@ class FamilyExerciseApp {
     this.authInitBusy = true;
     this.authReady = false;
     this.cloudMembershipReady = false;
+    const redirectPending = googleSignInRedirectPending();
+    if (redirectPending) this.authInteractiveStatus = "finishing";
     this.render();
     try {
-      if (googleSignInRedirectPending()) {
-        this.authInteractiveStatus = "finishing";
-        this.render();
-        const redirectUser = await consumeGoogleRedirectSignIn();
-        if (redirectUser) await this.handleObservedAuthState(redirectUser);
-        this.authInteractiveStatus = null;
-      }
+      // Attach the persistent auth observer before consuming a redirect result.
+      // If WebKit delays getRedirectResult(), an already-persisted Firebase user
+      // can still restore Cloud access instead of trapping the UI on Almost there.
       await observeFirebaseAuth(user => { void this.handleObservedAuthState(user); });
       this.authObserverAttached = true;
+      if (redirectPending) {
+        try {
+          const redirectUser = await withTimeout(
+            consumeGoogleRedirectSignIn(),
+            12_000,
+            this.locale === "zh-TW" ? "Google 登入回傳逾時，正在改用已儲存的登入狀態。" : "Google sign-in return timed out; checking the saved sign-in state instead."
+          );
+          if (redirectUser) await this.handleObservedAuthState(redirectUser);
+        } catch (error) {
+          clearGoogleRedirectSignInPending();
+          const recovered = await withTimeout(currentFirebaseAuthUser(), 5_000, "Firebase auth-state recovery timed out.").catch(() => null);
+          if (recovered) await this.handleObservedAuthState(recovered);
+          else {
+            this.authError = this.googleAuthErrorMessage(error);
+            console.warn("Firebase Auth redirect completion:", error);
+          }
+        } finally {
+          this.authInteractiveStatus = null;
+        }
+      }
     } catch (error) {
       this.authReady = true;
       this.cloudMembershipReady = true;
@@ -552,6 +575,40 @@ class FamilyExerciseApp {
       this.authInitBusy = false;
       this.render();
     }
+  }
+
+  private clearAuthInteractiveWatchdog(): void {
+    if (!this.authInteractiveWatchdog) return;
+    window.clearTimeout(this.authInteractiveWatchdog);
+    this.authInteractiveWatchdog = 0;
+  }
+
+  private armAuthInteractiveWatchdog(): void {
+    this.clearAuthInteractiveWatchdog();
+    this.authInteractiveWatchdog = window.setTimeout(() => {
+      this.authInteractiveWatchdog = 0;
+      void this.recoverInteractiveGoogleSignIn(true);
+    }, 15_000);
+  }
+
+  private async recoverInteractiveGoogleSignIn(expired: boolean): Promise<void> {
+    if (!this.authInteractiveStatus || !this.cloudAccessRequested || document.visibilityState !== "visible") return;
+    const recovered = await withTimeout(currentFirebaseAuthUser(), 5_000, "Firebase auth-state recovery timed out.").catch(() => null);
+    if (recovered) {
+      this.authInteractiveStatus = "finishing";
+      this.render();
+      await this.handleObservedAuthState(recovered);
+      this.authInteractiveStatus = null;
+      this.clearAuthInteractiveWatchdog();
+      this.render();
+      return;
+    }
+    if (!expired) return;
+    this.authInteractiveStatus = null;
+    this.authError = this.locale === "zh-TW"
+      ? "Google 登入沒有回到這個 LogTogether 視窗。請再按一次登入；iPhone／iPad 會改用整頁重新導向以避免卡住。"
+      : "Google sign-in did not return to this LogTogether window. Try again; iPhone/iPad will use a full-page redirect to avoid getting stuck.";
+    this.render();
   }
 
   private googleAuthErrorMessage(error: unknown): string {
@@ -681,6 +738,7 @@ class FamilyExerciseApp {
       this.cloudMembership = membership;
       this.seedLocalIdentity(user, membership);
       this.authInteractiveStatus = null;
+      this.clearAuthInteractiveWatchdog();
       this.render();
 
       try {
@@ -705,6 +763,7 @@ class FamilyExerciseApp {
       }
     } catch (error) {
       this.authInteractiveStatus = null;
+      this.clearAuthInteractiveWatchdog();
       this.cloudMembershipError = this.cloudErrorMessage(error);
       console.warn("Firebase family membership:", error);
       // A failed invite attempt should not leave a random Google account signed
@@ -4658,6 +4717,7 @@ class FamilyExerciseApp {
       this.authError = null;
       this.cloudMembershipError = null;
       this.authInteractiveStatus = "connecting";
+      this.armAuthInteractiveWatchdog();
       this.render();
       try {
         const result = await signInWithGoogle();
@@ -4670,9 +4730,11 @@ class FamilyExerciseApp {
         this.render();
         await this.handleObservedAuthState(result.user);
         this.authInteractiveStatus = null;
+        this.clearAuthInteractiveWatchdog();
         if (this.cloudAccessRequested && !this.authObserverAttached) await this.initializeAuthentication();
       } catch (error) {
         this.authInteractiveStatus = null;
+        this.clearAuthInteractiveWatchdog();
         this.authError = this.googleAuthErrorMessage(error);
         this.render();
       }
@@ -4684,9 +4746,11 @@ class FamilyExerciseApp {
       this.cloudMembershipError = null;
       this.authError = null;
       this.authInteractiveStatus = "finishing";
+      this.armAuthInteractiveWatchdog();
       this.render();
       void this.refreshCloudMembership(this.authUser).finally(() => {
         this.authInteractiveStatus = null;
+        this.clearAuthInteractiveWatchdog();
         this.render();
       });
     });
