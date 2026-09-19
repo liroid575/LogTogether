@@ -275,3 +275,7 @@ See prior release for routine deletion/sync, continuous circuit rest timing, goa
 - Undo toasts move below the top bar instead of covering workout controls.
 - Save routine remains available on mobile workout docks.
 - Discarding from Workout Now returns to a fresh workout builder instead of Home.
+
+## v0.15.0 reorder layout hotfix 9
+- Refined mobile reorder ergonomics: two-line exercise names, compact destructive action, movement threshold, smaller drag preview, and viewport-safe position menu.
+- No data, scoring, authorization, or dependency changes.

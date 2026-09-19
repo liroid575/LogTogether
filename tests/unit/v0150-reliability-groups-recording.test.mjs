@@ -67,6 +67,11 @@ await test("reordering removes permanent Up Down buttons while keeping drag and 
   assert.match(styles, /\.smooth-reorder-ghost/);
   assert.match(styles, /-webkit-user-select:none/);
   assert.match(styles, /\.compact-reorder-handle/);
+  assert.match(styles, /routine-remove-compact/);
+  assert.match(styles, /-webkit-line-clamp:2/);
+  assert.match(main, /dragThresholdPx = 7/);
+  assert.match(main, /Math\.hypot\(dx,dy\) < dragThresholdPx/);
+  assert.match(main, /routine-remove-compact/);
   assert.match(styles, /prefers-reduced-motion/);
 });
 
@@ -203,6 +208,6 @@ await test("v0.15 version and service-worker cache are explicit", async () => {
   const [pkg, main, sw, verify] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js"), text("scripts/verify-live-deployment.mjs")]);
   assert.equal(JSON.parse(pkg).version, "0.15.0");
   assert.match(main, /APP_VERSION = "0\.15\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.15\.0-drag-cleanup-hotfix8/);
+  assert.match(sw, /logtogether-shell-v0\.15\.0-reorder-layout-hotfix9/);
   assert.match(verify, /v0\.15\.0/);
 });
