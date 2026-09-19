@@ -388,7 +388,9 @@ class FamilyExerciseApp {
     this.render();
     if (this.cloudAccessRequested) void this.initializeAuthentication();
     if ("serviceWorker" in navigator && location.protocol !== "file:") {
-      navigator.serviceWorker.register("/sw.js").catch(error => console.warn("Service worker:", error));
+      navigator.serviceWorker.register("/sw.js", { scope:"/" })
+        .then(registration => registration.update().catch(()=>undefined))
+        .catch(error => console.warn("Service worker:", error));
     }
   }
 

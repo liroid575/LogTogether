@@ -129,17 +129,43 @@ await test("iPhone and iPad auth uses redirect-first handoff with persisted-stat
 });
 
 
-await test("notification onboarding and push setup cannot hang on service-worker readiness", async () => {
-  const [client, main] = await Promise.all([text("src/services/firebase-client.ts"), text("src/main.ts")]);
-  assert.match(client, /PUSH_SERVICE_WORKER_WAIT_MS = 6_000/);
-  assert.match(client, /activePushServiceWorkerRegistration/);
-  assert.match(client, /navigator\.serviceWorker\.getRegistration/);
-  assert.match(client, /navigator\.serviceWorker\.register\("\/sw\.js"\)/);
-  assert.match(client, /Promise\.race/);
-  assert.match(client, /activePushServiceWorkerRegistration\(2_500\)/);
-  assert.doesNotMatch(client, /const registration = await navigator\.serviceWorker\.ready;/);
+await test("notification setup uses declarative push when available and classic service workers as a bounded fallback", async () => {
+  const [client, main, sw, fn] = await Promise.all([
+    text("src/services/firebase-client.ts"),
+    text("src/main.ts"),
+    text("public/sw.js"),
+    text("functions/index.js")
+  ]);
+  assert.match(client, /PUSH_SERVICE_WORKER_WAIT_MS = 15_000/);
+  assert.match(client, /directWindowPushManager/);
+  assert.match(client, /WindowWithPushManager/);
+  assert.match(client, /pushManagerForCurrentContext/);
+  assert.match(client, /navigator\.serviceWorker\.getRegistration\(window\.location\.href\)/);
+  assert.match(client, /navigator\.serviceWorker\.register\("\/sw\.js", \{ scope:"\/" \}\)/);
+  assert.doesNotMatch(client, /const registration=await navigator\.serviceWorker\.ready;/);
+  assert.match(main, /navigator\.serviceWorker\.register\("\/sw\.js", \{ scope:"\/" \}\)/);
+  assert.match(sw, /Promise\.allSettled/);
+  assert.match(sw, /SKIP_WAITING/);
+  assert.match(sw, /data\?\.web_push === 8030/);
+  assert.match(fn, /function declarativePushPayload/);
+  assert.match(fn, /web_push:8030/);
+  assert.match(fn, /JSON\.stringify\(declarativePushPayload\(payload\)\)/);
   assert.match(main, /const enableRequest=enablePushNotifications\(this\.authUser,this\.cloudMembership\);\n    this\.render\(\);/);
-  assert.match(main, /void this\.maybeShowFamilyNotificationPrompt\(\)/);
+});
+
+await test("declarative Web Push keeps a classic service-worker fallback for older browsers", async () => {
+  const [client, sw, fn] = await Promise.all([
+    text("src/services/firebase-client.ts"),
+    text("public/sw.js"),
+    text("functions/index.js")
+  ]);
+  assert.match(client, /const direct = directWindowPushManager\(\)/);
+  assert.match(client, /direct \?\? await pushManagerForCurrentContext/);
+  assert.match(sw, /Promise\.allSettled\(SHELL\.map/);
+  assert.doesNotMatch(sw, /cache\.addAll\(SHELL\)/);
+  assert.match(sw, /const declarative = data\?\.web_push === 8030/);
+  assert.match(fn, /navigate:new URL\(path,vapidSubject\(\)\)\.href/);
+  assert.match(fn, /silent:false/);
 });
 
 await test("Family Compare never waits indefinitely for full private companion reconciliation", async () => {
@@ -157,6 +183,6 @@ await test("v0.15 version and service-worker cache are explicit", async () => {
   const [pkg, main, sw, verify] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js"), text("scripts/verify-live-deployment.mjs")]);
   assert.equal(JSON.parse(pkg).version, "0.15.0");
   assert.match(main, /APP_VERSION = "0\.15\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.15\.0-notify-hotfix4/);
+  assert.match(sw, /logtogether-shell-v0\.15\.0-push-hotfix6/);
   assert.match(verify, /v0\.15\.0/);
 });

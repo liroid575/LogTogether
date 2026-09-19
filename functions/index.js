@@ -103,6 +103,25 @@ function vapidSubject() {
 function configureWebPush() {
   webpush.setVapidDetails(vapidSubject(), VAPID_PUBLIC.value(), VAPID_PRIVATE.value());
 }
+
+function declarativePushPayload(payload) {
+  const title = String(payload?.title ?? "LogTogether").trim().slice(0,160) || "LogTogether";
+  const body = String(payload?.body ?? "").slice(0,300);
+  const eventId = String(payload?.eventId ?? `family_${Date.now()}`).slice(0,160);
+  const kind = String(payload?.kind ?? "family").slice(0,40);
+  const path = typeof payload?.url === "string" && payload.url.startsWith("/") ? payload.url : "/#family";
+  return {
+    web_push:8030,
+    notification:{
+      title,
+      body,
+      navigate:new URL(path,vapidSubject()).href,
+      silent:false,
+      tag:`logtogether-${eventId}`,
+      data:{eventId,kind}
+    }
+  };
+}
 async function recordUsage(familyId, values) {
   if (!familyId) return;
   const month = currentMonth();
@@ -170,7 +189,7 @@ async function sendPushToUser(uid, kind, payload, onlySubscriptionId = "") {
     try {
       await webpush.sendNotification(
         {endpoint:data.endpoint,keys:{p256dh:data.keys.p256dh,auth:data.keys.auth}},
-        JSON.stringify(payload),
+        JSON.stringify(declarativePushPayload(payload)),
         {TTL:60*60,urgency:"normal"}
       );
       sent += 1;

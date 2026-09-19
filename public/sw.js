@@ -1,4 +1,4 @@
-const CACHE = "logtogether-shell-v0.15.0-notify-hotfix4";
+const CACHE = "logtogether-shell-v0.15.0-push-hotfix6";
 const SHELL = [
   "/",
   "/index.html",
@@ -13,8 +13,17 @@ const SHELL = [
 ];
 
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
-  self.skipWaiting();
+  // One transient shell fetch must never prevent the worker from activating.
+  // Missing entries are filled by the normal network-first fetch path later.
+  event.waitUntil(
+    caches.open(CACHE)
+      .then(cache => Promise.allSettled(SHELL.map(path => cache.add(path))))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("message", event => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", event => {
@@ -54,16 +63,26 @@ self.addEventListener("push", event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; }
   catch { data = { body: event.data ? event.data.text() : "" }; }
-  const title = typeof data.title === "string" && data.title.trim() ? data.title : "LogTogether";
-  const eventId = typeof data.eventId === "string" && data.eventId ? data.eventId : `${data.kind || "family"}-${Date.now()}`;
+
+  // Declarative Web Push is also valid JSON for older browsers. New WebKit can
+  // display it without JavaScript; classic browsers reach this handler instead.
+  const declarative = data?.web_push === 8030 && data.notification ? data.notification : null;
+  const meta = declarative?.data && typeof declarative.data === "object" ? declarative.data : data;
+  const title = typeof declarative?.title === "string" && declarative.title.trim()
+    ? declarative.title
+    : (typeof data.title === "string" && data.title.trim() ? data.title : "LogTogether");
+  const eventId = typeof meta.eventId === "string" && meta.eventId ? meta.eventId : `${meta.kind || "family"}-${Date.now()}`;
+  const target = typeof declarative?.navigate === "string"
+    ? declarative.navigate
+    : (typeof data.url === "string" ? data.url : "/#family");
   const options = {
-    body: typeof data.body === "string" ? data.body : "",
+    body: typeof declarative?.body === "string" ? declarative.body : (typeof data.body === "string" ? data.body : ""),
     icon: "/icon-192.png",
     badge: "/icon-192.png",
-    tag: `logtogether-${eventId}`,
+    tag: typeof declarative?.tag === "string" && declarative.tag ? declarative.tag : `logtogether-${eventId}`,
     renotify: false,
     silent: false,
-    data: { url: typeof data.url === "string" ? data.url : "/#family", eventId, kind: data.kind || "family" }
+    data: { url: target, eventId, kind: meta.kind || "family" }
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });

@@ -32,7 +32,7 @@ const pushPublicKey = pushMatch?.[2]?.trim() ?? "";
 if (!/^[A-Za-z0-9_-]{80,100}$/.test(pushPublicKey)) {
   throw new Error("The deployed config has no valid Web Push public key.");
 }
-if (!serviceWorker.includes("logtogether-shell-v0.15.0-notify-hotfix4")) {
+if (!serviceWorker.includes("logtogether-shell-v0.15.0-push-hotfix6")) {
   throw new Error("The deployed service worker is not v0.15.0.");
 }
 if (!main.includes('APP_VERSION = "0.15.0"')) {
