@@ -305,7 +305,25 @@ LogTogether/
 
 Generated directories such as `dist/` and `node_modules/` are intentionally not committed.
 
-## Selected release history
+## Current release lineage
+
+### v0.15.0 — reliability, groups, and recording polish
+
+v0.15.0 hardens installed-PWA onboarding and Cloud reconnects, adds multi-group membership with server-enforced intersection privacy, restores reliable Web Push on current iPhone/iPad Home Screen apps, decouples Family Compare from slower private reconciliation, and refines completed-activity recording and deterministic touch reordering. Gold Day and mission scoring are unchanged. See [`docs/releases/V0.15.0.md`](docs/releases/V0.15.0.md) and the [`v0.15 exercise and reliability audit`](docs/research/LogTogether_v0.15.0_exercise_and_reliability_audit.xlsx).
+
+### v0.14.0 — exercise schema, builders, and timer consistency
+
+v0.14.0 removes the empty Sports / Other group, gives live workouts and circuits one clear builder selector, improves saved-routine editing and reordering, adds two-choice Chosen Activity missions with a Gym option, separates live sessions from backfilled logs in History, and fixes stretch hold/recovery countdown behavior. See [`docs/releases/V0.14.0.md`](docs/releases/V0.14.0.md) and the source-backed [`exercise and UX audit`](docs/research/LogTogether_v0.14.0_exercise_and_ux_audit.xlsx).
+
+### v0.13.0 — family comparison and workout polish
+
+v0.13.0 adds expandable family workout and supplement details, a cleaner choose-first saved-routine manager, corrected Chosen Activity mission semantics, practical jump-rope placement, full-image history viewing, and an iPhone workout-input mitigation for Shake to Undo. See [`docs/releases/V0.13.0.md`](docs/releases/V0.13.0.md).
+
+### v0.12.0 — family-test reliability and clarity
+
+v0.12.0 fixes timed exercise countdowns, separates planned and actual duration, improves routine editing and backdated logging, clarifies missions and rewards, repairs the user's own family comparison, and makes Gold Day Poke rewards reversible when qualifying activity is corrected. See [`docs/releases/V0.12.0.md`](docs/releases/V0.12.0.md).
+
+## Earlier development milestones
 
 This section highlights major milestones rather than every individual change.
 
@@ -558,7 +576,7 @@ Changes included:
 
 ### v0.11.7 — large-family social polish
 
-v0.11.7 was the previous family-testing release.
+v0.11.7 was an earlier family-testing release.
 
 It focuses mainly on presentation and large-family behavior:
 
@@ -572,22 +590,6 @@ It focuses mainly on presentation and large-family behavior:
 - clearer emphasis on custom-supplement management.
 
 The release does not intentionally change the core Firestore authorization model or exercise-science model introduced in earlier versions.
-
-### v0.15.0 — reliability, groups, and recording polish
-
-v0.15.0 hardens installed-PWA invitation recovery, makes Poke wallet updates observable after asynchronous Gold rewards, lets ordinary members belong to multiple privacy-isolated groups, replaces permanent reorder arrows with smooth drag plus an accessible position menu, removes the redundant Water-log dot, restores weekly supplement detail parity, and refines completed-activity logging against the exact 156-exercise catalogue. Gold Day and mission scoring are unchanged. See [`docs/releases/V0.15.0.md`](docs/releases/V0.15.0.md) and the [`v0.15 exercise and reliability audit`](docs/research/LogTogether_v0.15.0_exercise_and_reliability_audit.xlsx).
-
-### v0.14.0 — exercise schema, builders, and timer consistency
-
-v0.14.0 removes the empty Sports / Other group, gives live workouts and circuits one clear builder selector, improves saved-routine editing and reordering, adds two-choice Chosen Activity missions with a Gym option, separates live sessions from backfilled logs in History, and fixes stretch hold/recovery countdown behavior. Family comparison now separates workout dates visually. See [`docs/releases/V0.14.0.md`](docs/releases/V0.14.0.md) and the source-backed [`exercise and UX audit`](docs/research/LogTogether_v0.14.0_exercise_and_ux_audit.xlsx).
-
-### v0.13.0 — family comparison and workout polish
-
-v0.13.0 adds expandable family workout and supplement details, a cleaner choose-first saved-routine manager, corrected Chosen Activity mission semantics, practical jump-rope placement, full-image history viewing, and an iPhone workout-input mitigation for Shake to Undo. It also adds a deployment check that preserves the configured Google Forms responder link. See [`docs/releases/V0.13.0.md`](docs/releases/V0.13.0.md) for the full behavior, privacy boundaries, compatibility notes, and verification record.
-
-### v0.12.0 — family-test reliability and clarity
-
-v0.12.0 fixes timed exercise countdowns, separates planned and actual duration, improves routine editing and backdated logging, clarifies missions and rewards, repairs the user's own family comparison, and makes Gold Day Poke rewards reversible when qualifying activity is corrected. See [`docs/releases/V0.12.0.md`](docs/releases/V0.12.0.md) for the detailed behavior, scientific interpretation, and verification record.
 
 ## Documentation
 

@@ -1,32 +1,60 @@
-- Hotfix 8: makes touch reordering fail-safe on iOS by owning pointer events at the window level, cancelling on lost capture/app hide/blur, restoring the original order on cancellation, clearing orphaned drag UI during rerenders, and adding a 20-second safety cleanup so a floating drag label can never remain stuck until app restart. Service-worker cache: `logtogether-shell-v0.15.0-drag-cleanup-hotfix8`.
-- Hotfix 7: fixes the stale service-worker cache regression test, makes touch reordering immediate with pointer capture and explicit iOS text-selection suppression, replaces the oversized cloned-card drag ghost with a compact movement label, and moves smaller drag/fallback controls to the top-right of circuit and saved-routine edit cards. Service-worker cache: `logtogether-shell-v0.15.0-push-ui-hotfix7`.
-- Notification hotfix 4: notification onboarding/status no longer waits indefinitely for `navigator.serviceWorker.ready`; push setup re-registers/waits for the service worker with a bounded timeout and starts the permission/subscription request directly from the user gesture, improving iPhone/iPad Home Screen reliability. Service-worker cache: `logtogether-shell-v0.15.0-notify-hotfix4`.
+# Changelog
+
 ## v0.15.0 — Reliability, Groups & Recording Polish
 
-- Family sync hotfix 3: Family Compare shows the first authorized snapshot before slower private reconciliation, keeps the latest usable comparison visible during background refresh, bounds family snapshot/publish refreshes so “Syncing family progress…” cannot spin forever, and labels legacy supplement summaries that need the member’s own v0.15+ sync for date/time/amount detail. Service-worker cache: `logtogether-shell-v0.15.0-sync-hotfix3`.
-- iOS auth hotfix 2: iPhone/iPad now prefer Firebase's full-page Google redirect instead of popup auth, redirect intent survives PWA process suspension, auth observation starts before redirect-result consumption, and a visibility/watchdog recovery path prevents an OAuth return from leaving “Almost there…” indefinitely. Service-worker cache: `logtogether-shell-v0.15.0-auth-hotfix2`.
-- Hotfix: existing Cloud reconnects now survive hard reloads, grouped member queries explicitly match Firestore rule constraints, duplicate membership refreshes are coalesced, and the sign-in overlay no longer waits for the full Cloud sync. Service-worker cache: `logtogether-shell-v0.15.0-auth-hotfix1`.
-- Added verified-email-bound pending-invite recovery for browser-to-installed-PWA handoff while keeping opaque QR tokens as the preferred path.
-- Added realtime observation of the signed-in user's private Poke wallet without changing the Gold reward ledger/economy.
-- Added multi-group membership for ordinary family members with group-intersection authorization and owner-only atomic administration.
-- Replaced permanent workout/circuit/routine Up/Down controls with smooth Pointer Events reordering plus a compact accessible position chooser.
-- Removed the redundant Water-log calendar dot.
-- Unified personal and Family weekly supplement detail rendering.
-- Refined manual completed-activity logging so historical values start blank, effort may remain unknown, and existing tracker metrics are optional.
-- Re-audited the exact 156 exercise IDs; Warrior I/II now use per-side recording while scoring remains unchanged.
-- Added v0.15 unit/security regression coverage and a source-backed research workbook.
+### Cloud and PWA reliability
+
+- Added verified-email-bound pending-invite recovery for installed PWAs while retaining opaque QR invite tokens as the preferred claim path.
+- Fixed existing-member Cloud reconnects so authorization no longer waits for the full companion sync, reconnect intent survives reloads, and unresolved membership reads become retryable instead of hanging indefinitely.
+- Switched iPhone/iPad Google sign-in to redirect-first handoff with persisted-state recovery and bounded watchdog behavior.
+- Family Compare now renders the first authorized snapshot before slower private reconciliation and keeps usable comparison data visible during background refreshes.
+- Added realtime observation of the signed-in user's private Poke wallet so asynchronous Gold rewards appear without manual refresh.
+
+### Family privacy and groups
+
+- Added bounded multi-group membership for ordinary members while preserving legacy `groupId` compatibility.
+- Family visibility uses group intersection and remains server-enforced; only the family owner can change another member's group membership.
+- Exact body, hydration, supplement-day, wallet, route, and local-media data keep their existing private boundaries.
+- Weekly supplement sharing keeps bounded date/local-time/amount details while underlying supplement-day documents remain owner-only.
+
+### Notifications and deployment reliability
+
+- Restored and verified the client-visible VAPID public key while keeping the VAPID private key in server-side secret storage.
+- Notification onboarding and subscription setup use bounded service-worker fallback behavior and modern WebKit `window.pushManager` when available.
+- Push payloads support Declarative Web Push while preserving the classic service-worker fallback for older browsers.
+- Deployment verification now rejects builds without a valid Web Push public key and retries briefly after Hosting release propagation before reporting a live-version mismatch.
+
+### Exercise recording and UI
+
+- Preserved the exact 156 stable exercise IDs and 15 recording profiles; Gold Day and mission scoring are unchanged.
+- Manual completed-activity fields now start from actual blank values, effort may remain unrecorded, and existing non-sensitive tracker metrics are optional.
+- Warrior I and Warrior II use per-side recording; other v0.14 laterality behavior remains compatible.
+- Removed the redundant Water-log calendar dot and unified personal/Family weekly supplement detail rendering.
+- Replaced permanent reorder arrows with a drag handle plus an accessible Move-to-position fallback. The final touch implementation uses deterministic exercise-only insertion slots, explicit exercise dividers, bounded iOS cleanup, and cannot drop an exercise below Add exercise or unrelated controls.
+
+### Verification
+
+- Added v0.15 regression coverage for multi-group authorization, invite recovery, Cloud reconnects, Family Compare loading, notification setup, Poke wallet observation, completed-activity semantics, and touch reordering.
+- Added `docs/research/LogTogether_v0.15.0_exercise_and_reliability_audit.xlsx` covering the exact exercise catalogue and v0.15 reliability decisions.
+- Browser runtime dependencies remain at zero.
+- Current service-worker cache marker: `logtogether-shell-v0.15.0-reorder-slots-hotfix10`.
+
+## v0.14.0 — Exercise Schema, Builders & Timer Consistency
+
+- Removed the empty Sports / Other picker group while preserving legacy records.
+- Unified exercise laterality behavior, stretch hold/recovery timing, circuit/workout builders, routine editing, and unstarted-workout reordering.
+- Added two-choice Chosen Activity support, a Gym option, and clearer History source filtering.
+- Kept the exercise catalogue at 156 stable IDs and added the source-backed v0.14 exercise/UX audit.
 
 ## v0.13.0 — Family Comparison & Workout Polish
 
-- Added expandable date/time/amount supplement detail to personal weekly review and enabled family summaries.
-- Added expandable recent family workout set, duration, rest, load, effort, note, and circuit detail.
-- Reworked saved-routine management around an explicit chooser, compact top actions, and optional bulk deletion.
-- Corrected Chosen Activity Days so only one specifically selected supported activity earns progress.
-- Moved basic jump rope to Home / Functional and Single/Double Unders to Gym.
-- Preserved full history photos and added an enlarged lightbox.
-- Reduced iPhone Shake to Undo interruptions during workouts by releasing editable focus and blocking web undo events where supported.
-- Added a pre-deployment check for the private Firebase configuration and Google Forms feedback link.
-- Added backward-compatible bounded weekly supplement-detail sharing and Firestore rule coverage.
+- Added expandable family workout and supplement detail, choose-first saved-routine management, corrected Chosen Activity semantics, practical jump-rope placement, full-image History viewing, and iPhone workout-input safeguards.
+- Added bounded weekly supplement-detail sharing and deployment checks for private local configuration and the feedback form.
+
+## v0.12.0 — Family-test Reliability & Clarity
+
+- Fixed timed exercise countdowns and separated planned from actual duration.
+- Improved routine editing and backdated logging, clarified missions/rewards, repaired self Family Compare behavior, and made Gold Day Poke rewards reversible when qualifying activity is corrected.
 
 ## v0.11.7 — Family Burst & Supplement UI Polish
 
@@ -275,14 +303,3 @@ See prior release for routine deletion/sync, continuous circuit rest timing, goa
 - Undo toasts move below the top bar instead of covering workout controls.
 - Save routine remains available on mobile workout docks.
 - Discarding from Workout Now returns to a fresh workout builder instead of Home.
-
-## v0.15.0 reorder layout hotfix 9
-- Refined mobile reorder ergonomics: two-line exercise names, compact destructive action, movement threshold, smaller drag preview, and viewport-safe position menu.
-- No data, scoring, authorization, or dependency changes.
-
-## v0.15.0 reorder slots hotfix 10
-- Replaced live DOM shuffling during pointer movement with stable, slot-based destination calculation. Dragging can only resolve to an exercise position and cannot cross into Add exercise or other following controls.
-- Restored explicit divider lines between exercises and added an accent insertion marker for the exact pending drop position.
-- Kept fail-safe iOS drag cleanup and the non-drag Move-to-position menu.
-- Live deployment verification now retries briefly for Firebase Hosting propagation instead of reporting a false negative immediately after a successful release.
-- No workout schema, scoring, Cloud authorization, Firestore Rules, Functions, notification behavior, or privacy boundary changes.
