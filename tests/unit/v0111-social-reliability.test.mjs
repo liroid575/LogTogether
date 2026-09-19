@@ -34,7 +34,7 @@ await test("Pokes cap at seven and enforce server-side mute plus recipient flood
   assert.match(fn, /const POKE_MAX = 7/);
   assert.match(fn, /const RECIPIENT_FLOOD_MAX = 5/);
   assert.match(fn, /mutedPokeUids\.includes\(senderUid\)/);
-  assert.match(fn, /mutedPokeGroupIds\.includes\(senderGroup\)/);
+  assert.match(fn, /sharedGroups\.length > 0 && sharedGroups\.every\(group => recipientPrefs\.mutedPokeGroupIds\.includes\(group\)\)/);
   assert.match(fn, /pokeRecipientLimits/);
   assert.match(fn, /const unlimited = senderAccess\.role === "owner"/);
 });

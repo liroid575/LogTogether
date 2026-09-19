@@ -10,7 +10,7 @@ The project gradually grew into a bilingual family fitness PWA with structured w
 
 LogTogether is currently a **family-testing alpha**.
 
-The current application version is **v0.14.0**. It is actively used for family-oriented testing, but it is not yet presented as a public production service.
+The current application version is **v0.15.0**. It is actively used for family-oriented testing, but it is not yet presented as a public production service.
 
 The project favors:
 
@@ -572,6 +572,10 @@ It focuses mainly on presentation and large-family behavior:
 - clearer emphasis on custom-supplement management.
 
 The release does not intentionally change the core Firestore authorization model or exercise-science model introduced in earlier versions.
+
+### v0.15.0 — reliability, groups, and recording polish
+
+v0.15.0 hardens installed-PWA invitation recovery, makes Poke wallet updates observable after asynchronous Gold rewards, lets ordinary members belong to multiple privacy-isolated groups, replaces permanent reorder arrows with smooth drag plus an accessible position menu, removes the redundant Water-log dot, restores weekly supplement detail parity, and refines completed-activity logging against the exact 156-exercise catalogue. Gold Day and mission scoring are unchanged. See [`docs/releases/V0.15.0.md`](docs/releases/V0.15.0.md) and the [`v0.15 exercise and reliability audit`](docs/research/LogTogether_v0.15.0_exercise_and_reliability_audit.xlsx).
 
 ### v0.14.0 — exercise schema, builders, and timer consistency
 

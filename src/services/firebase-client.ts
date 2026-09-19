@@ -45,8 +45,10 @@ export interface CloudAccessRecord {
   status: "active" | "revoked";
   inviteId: string;
   groupId: string;
+  groupIds: string[];
   shareGroupIds: string[];
   legacyGroupModel: boolean;
+  legacyGroupIdsModel: boolean;
 }
 
 export interface CloudFamilyRecord {
@@ -63,8 +65,10 @@ export interface CloudFamilyMember {
   status: "active" | "revoked";
   inviteId: string;
   groupId: string;
+  groupIds: string[];
   shareGroupIds: string[];
   legacyGroupModel: boolean;
+  legacyGroupIdsModel: boolean;
   displayName?: string;
   photoURL?: string;
   biologicalSex?: ProfileData["biologicalSex"];
@@ -395,14 +399,21 @@ function normalizedGroupIds(value: unknown, fallback: string[] = [DEFAULT_GROUP_
   return [...new Set(value.filter(item => typeof item === "string" && item.trim()).map(item => String(item).trim().slice(0, 80)))].slice(0, 20);
 }
 
+function normalizedMembershipGroupIds(value: unknown, primaryGroupId: string): string[] {
+  const values = normalizedGroupIds(value, [primaryGroupId]);
+  return values.includes(primaryGroupId) ? values : [primaryGroupId, ...values].slice(0, 20);
+}
+
 function parseAccess(data: Record<string, any>): CloudAccessRecord {
   if (data.schemaVersion !== 1) throw new Error("Unsupported access record schema.");
   if (typeof data.familyId !== "string" || !data.familyId) throw new Error("Invalid family access record.");
   if (data.role !== "owner" && data.role !== "member") throw new Error("Invalid family role.");
   if (data.status !== "active" && data.status !== "revoked") throw new Error("Invalid family access status.");
   if (typeof data.inviteId !== "string") throw new Error("Invalid family invite reference.");
-  const legacyGroupModel = typeof data.groupId !== "string";
   const groupId = normalizedGroupId(data.groupId);
+  const groupIds = normalizedMembershipGroupIds(data.groupIds, groupId);
+  const legacyGroupModel = typeof data.groupId !== "string";
+  const legacyGroupIdsModel = !Array.isArray(data.groupIds);
   return {
     schemaVersion: 1,
     familyId: data.familyId,
@@ -410,8 +421,10 @@ function parseAccess(data: Record<string, any>): CloudAccessRecord {
     status: data.status,
     inviteId: data.inviteId,
     groupId,
-    shareGroupIds: data.role === "owner" ? normalizedGroupIds(data.shareGroupIds, [groupId]) : [groupId],
-    legacyGroupModel
+    groupIds,
+    shareGroupIds: data.role === "owner" ? normalizedGroupIds(data.shareGroupIds, [groupId]) : groupIds,
+    legacyGroupModel,
+    legacyGroupIdsModel
   };
 }
 
@@ -441,8 +454,10 @@ function parseMember(data: Record<string, any>): CloudFamilyMember {
   if (data.role !== "owner" && data.role !== "member") throw new Error("Invalid family member role.");
   if (data.status !== "active" && data.status !== "revoked") throw new Error("Invalid family member status.");
   if (typeof data.inviteId !== "string") throw new Error("Invalid family member invite reference.");
-  const legacyGroupModel = typeof data.groupId !== "string";
   const groupId = normalizedGroupId(data.groupId);
+  const groupIds = normalizedMembershipGroupIds(data.groupIds, groupId);
+  const legacyGroupModel = typeof data.groupId !== "string";
+  const legacyGroupIdsModel = !Array.isArray(data.groupIds);
   return {
     uid: data.uid,
     familyId: data.familyId,
@@ -450,8 +465,10 @@ function parseMember(data: Record<string, any>): CloudFamilyMember {
     status: data.status,
     inviteId: data.inviteId,
     groupId,
-    shareGroupIds: data.role === "owner" ? normalizedGroupIds(data.shareGroupIds, [groupId]) : [groupId],
+    groupIds,
+    shareGroupIds: data.role === "owner" ? normalizedGroupIds(data.shareGroupIds, [groupId]) : groupIds,
     legacyGroupModel,
+    legacyGroupIdsModel,
     displayName: typeof data.displayName === "string" ? data.displayName : undefined,
     photoURL: typeof data.photoURL === "string" ? data.photoURL : undefined,
     biologicalSex: ["female", "male", "other", "prefer_not"].includes(data.biologicalSex) ? data.biologicalSex : undefined,
@@ -572,23 +589,35 @@ export async function loadCloudMembership(user: FirebaseAuthUser): Promise<Cloud
     members = membersSnapshot.docs.map((snapshot: any) => parseMember(snapshot.data()));
     groups = groupsSnapshot ? groupsSnapshot.docs.map(parseGroup) : [];
   } else {
-    const [membersSnapshot, groupSnapshot] = await Promise.all([
-      firestoreModule.getDocs(firestoreModule.query(
-        membersRef,
-        firestoreModule.where("groupId", "==", access.groupId),
-        firestoreModule.where("status", "==", "active"),
-        firestoreModule.where("role", "==", "member")
-      )),
-      firestoreModule.getDoc(firestoreModule.doc(db, "families", access.familyId, "groups", access.groupId))
+    const groupIds = access.groupIds;
+    const memberQuery = access.legacyGroupIdsModel
+      ? firestoreModule.query(
+          membersRef,
+          firestoreModule.where("groupId", "==", access.groupId),
+          firestoreModule.where("status", "==", "active"),
+          firestoreModule.where("role", "==", "member")
+        )
+      : firestoreModule.query(
+          membersRef,
+          firestoreModule.where("groupIds", "array-contains-any", groupIds),
+          firestoreModule.where("status", "==", "active")
+        );
+    const [membersSnapshot, groupSnapshots] = await Promise.all([
+      firestoreModule.getDocs(memberQuery),
+      Promise.all(groupIds.map(groupId => firestoreModule.getDoc(firestoreModule.doc(db, "families", access.familyId, "groups", groupId))))
     ]);
-    members = membersSnapshot.docs.map((snapshot: any) => parseMember(snapshot.data()));
-    groups = groupSnapshot.exists() ? [parseGroup(groupSnapshot)] : [{ id: access.groupId, schemaVersion: 1, name: access.groupId === DEFAULT_GROUP_ID ? "Family" : access.groupId }];
+    members = membersSnapshot.docs
+      .map((snapshot: any) => parseMember(snapshot.data()))
+      .filter((member: CloudFamilyMember) => member.role === "member");
+    groups = groupSnapshots.map((snapshot:any,index:number) => snapshot.exists()
+      ? parseGroup(snapshot)
+      : ({ id: groupIds[index]!, schemaVersion: 1, name: groupIds[index] === DEFAULT_GROUP_ID ? "Family" : groupIds[index]! } as CloudGroup));
     if (family?.ownerId && !members.some(member => member.uid === family.ownerId)) {
       try {
         const ownerSnapshot = await firestoreModule.getDoc(firestoreModule.doc(db, "families", access.familyId, "members", family.ownerId));
         if (ownerSnapshot.exists()) members.push(parseMember(ownerSnapshot.data()));
       } catch (error: any) {
-        // An owner who did not share their profile with this group is intentionally unreadable.
+        // An owner who did not share their profile with any of this member's groups is intentionally unreadable.
         if (!String(error?.code ?? "").includes("permission-denied")) throw error;
       }
     }
@@ -610,8 +639,8 @@ export async function ensureCloudGroupModel(user: FirebaseAuthUser, membership: 
   if (membership.access.status !== "active" || membership.access.role !== "owner") return membership;
   const db = await ensureFirestore();
   if (!db || !firestoreModule) throw new Error("Cloud Firestore is not configured.");
-  const needsMigration = membership.access.legacyGroupModel
-    || membership.members.some(member => member.legacyGroupModel)
+  const needsMigration = membership.access.legacyGroupModel || membership.access.legacyGroupIdsModel
+    || membership.members.some(member => member.legacyGroupModel || member.legacyGroupIdsModel)
     || !membership.groups.some(group => group.id === DEFAULT_GROUP_ID);
   if (!needsMigration) return membership;
 
@@ -625,11 +654,11 @@ export async function ensureCloudGroupModel(user: FirebaseAuthUser, membership: 
   }, { merge: true });
 
   for (const member of membership.members) {
-    if (!member.legacyGroupModel && !(member.role === "owner" && member.shareGroupIds.length === 0)) continue;
+    if (!member.legacyGroupModel && !member.legacyGroupIdsModel && !(member.role === "owner" && member.shareGroupIds.length === 0)) continue;
     const groupId = member.groupId || DEFAULT_GROUP_ID;
     const accessRef = firestoreModule.doc(db, "access", member.uid);
     const memberRef = firestoreModule.doc(db, "families", membership.access.familyId, "members", member.uid);
-    const patch: Record<string, any> = { groupId };
+    const patch: Record<string, any> = { groupId, groupIds: member.groupIds.length ? member.groupIds : [groupId] };
     if (member.role === "owner") patch.shareGroupIds = member.shareGroupIds.length ? member.shareGroupIds : [DEFAULT_GROUP_ID];
     batch.update(accessRef, patch);
     batch.update(memberRef, patch);
@@ -684,6 +713,40 @@ export async function createFamilyInvite(
   };
 }
 
+export interface RecoverableFamilyInvite {
+  id: string;
+  familyId: string;
+  groupId: string;
+  expiresAtMs: number;
+}
+
+/**
+ * Recover an invitation after a browser -> installed-PWA handoff. iOS keeps the
+ * standalone PWA in a separate storage container, so the opaque URL token may
+ * not survive installation. Firestore rules constrain this query to the signed-
+ * in user's own verified email and pending invitations only.
+ */
+export async function findRecoverableFamilyInvites(user: FirebaseAuthUser): Promise<RecoverableFamilyInvite[]> {
+  requireSignedInUser(user);
+  if (!user.emailVerified || !user.email) return [];
+  const db = await ensureFirestore();
+  if (!db || !firestoreModule) throw new Error("Cloud Firestore is not configured.");
+  const emailLower = normalizeInviteEmail(user.email);
+  const snapshot = await firestoreModule.getDocs(firestoreModule.query(
+    firestoreModule.collection(db, "invites"),
+    firestoreModule.where("emailLower", "==", emailLower),
+    firestoreModule.where("status", "==", "pending"),
+    firestoreModule.limit(3)
+  ));
+  const now = Date.now();
+  return snapshot.docs.flatMap((docSnapshot:any) => {
+    const data = docSnapshot.data() ?? {};
+    const expiresAtMs = data.expiresAt?.toMillis?.() ?? 0;
+    if (data.schemaVersion !== 1 || data.role !== "member" || typeof data.familyId !== "string" || !data.familyId || expiresAtMs <= now) return [];
+    return [{ id: docSnapshot.id, familyId: data.familyId, groupId: normalizedGroupId(data.groupId), expiresAtMs }];
+  });
+}
+
 export async function claimFamilyInvite(
   user: FirebaseAuthUser,
   inviteCode: string
@@ -732,7 +795,8 @@ export async function claimFamilyInvite(
     role: "member",
     status: "active",
     inviteId: code,
-    groupId
+    groupId,
+    groupIds: [groupId]
   });
   batch.set(memberRef, {
     schemaVersion: 1,
@@ -742,6 +806,7 @@ export async function claimFamilyInvite(
     status: "active",
     inviteId: code,
     groupId,
+    groupIds: [groupId],
     displayName,
     ...(user.photoURL ? { photoURL: user.photoURL } : {}),
     identitySeeded: true
@@ -882,7 +947,7 @@ export async function deleteFamilyGroup(user: FirebaseAuthUser, membership: Clou
   requireSignedInUser(user);
   if (membership.access.status !== "active" || membership.access.role !== "owner") throw new Error("Only the owner can delete groups.");
   if (groupId === DEFAULT_GROUP_ID) throw new Error("The default Family group cannot be deleted.");
-  if (membership.members.some(member => member.groupId === groupId)) throw new Error("Move members out of this group before deleting it.");
+  if (membership.members.some(member => member.groupIds.includes(groupId))) throw new Error("Remove this group from every member before deleting it.");
   if (membership.access.shareGroupIds.includes(groupId)) throw new Error("Remove this group from your sharing list before deleting it.");
   const db = await ensureFirestore();
   if (!db || !firestoreModule) throw new Error("Cloud Firestore is not configured.");
@@ -890,21 +955,29 @@ export async function deleteFamilyGroup(user: FirebaseAuthUser, membership: Clou
   return (await loadCloudMembership(user))!;
 }
 
-export async function setFamilyMemberGroup(user: FirebaseAuthUser, membership: CloudMembership, memberUid: string, groupIdValue: string): Promise<CloudMembership> {
+export async function setFamilyMemberGroups(user: FirebaseAuthUser, membership: CloudMembership, memberUid: string, groupIdsValue: string[], primaryGroupIdValue?: string): Promise<CloudMembership> {
   requireSignedInUser(user);
   if (membership.access.status !== "active" || membership.access.role !== "owner") throw new Error("Only the owner can assign groups.");
   if (!memberUid || memberUid === user.uid) throw new Error("Use owner sharing controls for your own profile.");
   const target = membership.members.find(member => member.uid === memberUid);
   if (!target || target.role !== "member") throw new Error("Cloud member not found.");
-  const groupId = normalizedGroupId(groupIdValue);
-  if (!membership.groups.some(group => group.id === groupId)) throw new Error("Choose a valid group.");
+  const valid = new Set(membership.groups.map(group => group.id));
+  const groupIds = [...new Set(groupIdsValue.map(normalizedGroupId).filter(groupId => valid.has(groupId)))].slice(0, 20);
+  if (!groupIds.length) throw new Error("A Cloud member must belong to at least one group.");
+  const requestedPrimary = normalizedGroupId(primaryGroupIdValue ?? target.groupId);
+  const groupId = groupIds.includes(requestedPrimary) ? requestedPrimary : groupIds[0]!;
   const db = await ensureFirestore();
   if (!db || !firestoreModule) throw new Error("Cloud Firestore is not configured.");
   const batch = firestoreModule.writeBatch(db);
-  batch.update(firestoreModule.doc(db, "access", memberUid), { groupId });
-  batch.update(firestoreModule.doc(db, "families", membership.access.familyId, "members", memberUid), { groupId });
+  batch.update(firestoreModule.doc(db, "access", memberUid), { groupId, groupIds });
+  batch.update(firestoreModule.doc(db, "families", membership.access.familyId, "members", memberUid), { groupId, groupIds });
   await batch.commit();
   return (await loadCloudMembership(user))!;
+}
+
+// Compatibility helper for older callers/tests. v0.15 UI uses setFamilyMemberGroups.
+export async function setFamilyMemberGroup(user: FirebaseAuthUser, membership: CloudMembership, memberUid: string, groupIdValue: string): Promise<CloudMembership> {
+  return setFamilyMemberGroups(user, membership, memberUid, [normalizedGroupId(groupIdValue)], normalizedGroupId(groupIdValue));
 }
 
 export async function setOwnerShareGroups(user: FirebaseAuthUser, membership: CloudMembership, groupIdsValue: string[]): Promise<CloudMembership> {
@@ -1499,6 +1572,17 @@ export async function loadPokeWallet(user: FirebaseAuthUser): Promise<PokeWallet
   const snapshot=await firestoreModule.getDoc(firestoreModule.doc(db,"pokeWallets",user.uid));
   const data=snapshot.exists()?snapshot.data():{};
   return {balance:Number.isFinite(data.balance)?Math.max(0,Math.min(7,Math.round(data.balance))):0,maxBalance:7};
+}
+
+export async function observePokeWallet(user: FirebaseAuthUser, callback: (wallet: PokeWalletState) => void): Promise<() => void> {
+  requireSignedInUser(user);
+  const db=await ensureFirestore();
+  if(!db||!firestoreModule){ callback({balance:0,maxBalance:7}); return () => undefined; }
+  const ref=firestoreModule.doc(db,"pokeWallets",user.uid);
+  return firestoreModule.onSnapshot(ref,(snapshot:any)=>{
+    const data=snapshot.exists()?snapshot.data():{};
+    callback({balance:Number.isFinite(data.balance)?Math.max(0,Math.min(7,Math.round(data.balance))):0,maxBalance:7});
+  },(error:any)=>{ console.warn("Poke wallet observer:",error); });
 }
 
 export async function sendPoke(user: FirebaseAuthUser, recipientUid: string, emoji: string): Promise<PokeWalletState> {

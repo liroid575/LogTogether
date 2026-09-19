@@ -8,6 +8,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
   query,
   setDoc,
   updateDoc,
@@ -618,5 +619,81 @@ test("members cannot move themselves between groups, but owner can move them ato
   const batch = writeBatch(ownerDb);
   batch.update(doc(ownerDb, "access/bob"), { groupId: "friends" });
   batch.update(doc(ownerDb, "families/family-a/members/bob"), { groupId: "friends" });
+  await assertSucceeds(batch.commit());
+});
+
+
+test("verified invited email can recover only its own bounded pending invite query", async () => {
+  const dana = auth("dana", "dana@example.com", true);
+  const snapshot = await assertSucceeds(getDocs(query(
+    collection(dana, "invites"),
+    where("emailLower", "==", "dana@example.com"),
+    where("status", "==", "pending"),
+    limit(3)
+  )));
+  assert.deepEqual(snapshot.docs.map(item=>item.id), ["invite-dana"]);
+
+  const unverified = auth("dana-unverified", "dana@example.com", false);
+  await assertFails(getDocs(query(
+    collection(unverified, "invites"),
+    where("emailLower", "==", "dana@example.com"),
+    where("status", "==", "pending"),
+    limit(3)
+  )));
+
+  await assertFails(getDocs(query(
+    collection(dana, "invites"),
+    where("status", "==", "pending"),
+    limit(3)
+  )));
+  await assertFails(getDocs(query(
+    collection(dana, "invites"),
+    where("emailLower", "==", "old@example.com"),
+    where("status", "==", "pending"),
+    limit(3)
+  )));
+  await assertFails(getDocs(query(
+    collection(dana, "invites"),
+    where("emailLower", "==", "dana@example.com"),
+    where("status", "==", "pending"),
+    limit(4)
+  )));
+});
+
+test("v0.15 normal members can share more than one group without leaking to non-overlapping members", async () => {
+  await env.withSecurityRulesDisabled(async context => {
+    const db=context.firestore();
+    await setDoc(doc(db,"families/family-a/groups/default"),{schemaVersion:1,name:"Family",createdAt:nowTs(),updatedAt:nowTs()});
+    await setDoc(doc(db,"families/family-a/groups/friends"),{schemaVersion:1,name:"Friends",createdAt:nowTs(),updatedAt:nowTs()});
+    await setDoc(doc(db,"families/family-a/groups/other"),{schemaVersion:1,name:"Other",createdAt:nowTs(),updatedAt:nowTs()});
+    await updateDoc(doc(db,"access/alice"),{groupId:"default",groupIds:["default"],shareGroupIds:["default"]});
+    await updateDoc(doc(db,"families/family-a/members/alice"),{groupId:"default",groupIds:["default"],shareGroupIds:["default"]});
+    await updateDoc(doc(db,"access/bob"),{groupId:"default",groupIds:["default","friends"]});
+    await updateDoc(doc(db,"families/family-a/members/bob"),{groupId:"default",groupIds:["default","friends"]});
+    await updateDoc(doc(db,"access/charlie"),{groupId:"friends",groupIds:["friends"]});
+    await updateDoc(doc(db,"families/family-a/members/charlie"),{groupId:"friends",groupIds:["friends"]});
+    await setDoc(doc(db,"access/frank"),{schemaVersion:1,familyId:"family-a",role:"member",status:"active",inviteId:"seed-frank",groupId:"other",groupIds:["other"]});
+    await setDoc(doc(db,"families/family-a/members/frank"),{schemaVersion:1,familyId:"family-a",uid:"frank",role:"member",status:"active",inviteId:"seed-frank",displayName:"frank",groupId:"other",groupIds:["other"]});
+    await setDoc(doc(db,"workouts/charlie-multi"),{schemaVersion:1,familyId:"family-a",ownerId:"charlie",activityKind:"strength",visibility:"family",selectedViewerIds:[],routineName:"Charlie multi"});
+  });
+  await assertSucceeds(getDoc(doc(auth("bob"),"workouts/charlie-multi")));
+  await assertFails(getDoc(doc(auth("frank"),"workouts/charlie-multi")));
+});
+
+test("members cannot self-add a secondary group and owner must mirror group arrays atomically", async () => {
+  await env.withSecurityRulesDisabled(async context => {
+    const db=context.firestore();
+    await setDoc(doc(db,"families/family-a/groups/default"),{schemaVersion:1,name:"Family",createdAt:nowTs(),updatedAt:nowTs()});
+    await setDoc(doc(db,"families/family-a/groups/friends"),{schemaVersion:1,name:"Friends",createdAt:nowTs(),updatedAt:nowTs()});
+    await updateDoc(doc(db,"access/bob"),{groupId:"default",groupIds:["default"]});
+    await updateDoc(doc(db,"families/family-a/members/bob"),{groupId:"default",groupIds:["default"]});
+  });
+  await assertFails(updateDoc(doc(auth("bob"),"access/bob"),{groupIds:["default","friends"]}));
+
+  const ownerDb=auth("alice");
+  await assertFails(updateDoc(doc(ownerDb,"access/bob"),{groupIds:["default","friends"]}));
+  const batch=writeBatch(ownerDb);
+  batch.update(doc(ownerDb,"access/bob"),{groupId:"default",groupIds:["default","friends"]});
+  batch.update(doc(ownerDb,"families/family-a/members/bob"),{groupId:"default",groupIds:["default","friends"]});
   await assertSucceeds(batch.commit());
 });

@@ -1,3 +1,15 @@
+## v0.15.0 — Reliability, Groups & Recording Polish
+
+- Added verified-email-bound pending-invite recovery for browser-to-installed-PWA handoff while keeping opaque QR tokens as the preferred path.
+- Added realtime observation of the signed-in user's private Poke wallet without changing the Gold reward ledger/economy.
+- Added multi-group membership for ordinary family members with group-intersection authorization and owner-only atomic administration.
+- Replaced permanent workout/circuit/routine Up/Down controls with smooth Pointer Events reordering plus a compact accessible position chooser.
+- Removed the redundant Water-log calendar dot.
+- Unified personal and Family weekly supplement detail rendering.
+- Refined manual completed-activity logging so historical values start blank, effort may remain unknown, and existing tracker metrics are optional.
+- Re-audited the exact 156 exercise IDs; Warrior I/II now use per-side recording while scoring remains unchanged.
+- Added v0.15 unit/security regression coverage and a source-backed research workbook.
+
 ## v0.13.0 — Family Comparison & Workout Polish
 
 - Added expandable date/time/amount supplement detail to personal weekly review and enabled family summaries.

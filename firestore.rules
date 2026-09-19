@@ -49,6 +49,18 @@ service cloud.firestore {
       return data.get('groupId', 'default');
     }
 
+    function groupIdsFor(data) {
+      return data.get('groupIds', [groupIdFor(data)]);
+    }
+
+    function validGroupMembership(data) {
+      return groupIdFor(data) is string
+        && groupIdsFor(data) is list
+        && groupIdsFor(data).size() > 0
+        && groupIdsFor(data).size() <= 20
+        && groupIdsFor(data).hasAny([groupIdFor(data)]);
+    }
+
     function ownerShareGroupsFor(data) {
       return data.get('shareGroupIds', [groupIdFor(data)]);
     }
@@ -70,11 +82,11 @@ service cloud.firestore {
             && (
               (
                 get(accessPath(uid)).data.role == 'owner'
-                && ownerShareGroupsFor(get(accessPath(uid)).data).hasAny([groupIdFor(myAccess().data)])
+                && ownerShareGroupsFor(get(accessPath(uid)).data).hasAny(groupIdsFor(myAccess().data))
               )
               || (
                 get(accessPath(uid)).data.role == 'member'
-                && groupIdFor(get(accessPath(uid)).data) == groupIdFor(myAccess().data)
+                && groupIdsFor(get(accessPath(uid)).data).hasAny(groupIdsFor(myAccess().data))
               )
             )
           )
@@ -145,13 +157,16 @@ service cloud.firestore {
         && accessAfter.status == 'active'
         && accessAfter.inviteId == inviteId
         && groupIdFor(accessAfter) == groupIdFor(getAfter(invitePath(inviteId)).data)
+        && validGroupMembership(accessAfter)
+        && groupIdsFor(accessAfter).size() == 1
         && memberAfter.schemaVersion == 1
         && memberAfter.uid == uid
         && memberAfter.familyId == familyId
         && memberAfter.role == role
         && memberAfter.status == 'active'
         && memberAfter.inviteId == inviteId
-        && groupIdFor(memberAfter) == groupIdFor(accessAfter);
+        && groupIdFor(memberAfter) == groupIdFor(accessAfter)
+        && groupIdsFor(memberAfter) == groupIdsFor(accessAfter);
     }
 
     function validInviteClaim(before, after, inviteId) {
@@ -174,7 +189,7 @@ service cloud.firestore {
       return signedIn()
         && request.auth.uid == uid
         && data.keys().hasAll(['schemaVersion', 'familyId', 'role', 'status', 'inviteId'])
-        && data.keys().hasOnly(['schemaVersion', 'familyId', 'role', 'status', 'inviteId', 'groupId'])
+        && data.keys().hasOnly(['schemaVersion', 'familyId', 'role', 'status', 'inviteId', 'groupId', 'groupIds'])
         && data.schemaVersion == 1
         && data.familyId is string
         && data.role == 'member'
@@ -184,7 +199,9 @@ service cloud.firestore {
         && inviteAfter.claimedBy == uid
         && inviteAfter.familyId == data.familyId
         && inviteAfter.role == data.role
-        && groupIdFor(data) == groupIdFor(inviteAfter);
+        && groupIdFor(data) == groupIdFor(inviteAfter)
+        && validGroupMembership(data)
+        && groupIdsFor(data).size() == 1;
     }
 
     function validClaimedMemberCreate(familyId, uid, data) {
@@ -197,7 +214,7 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'schemaVersion', 'uid', 'familyId', 'role', 'status', 'inviteId',
-          'displayName', 'photoURL', 'identitySeeded', 'groupId'
+          'displayName', 'photoURL', 'identitySeeded', 'groupId', 'groupIds'
         ])
         && data.schemaVersion == 1
         && data.uid == uid
@@ -214,7 +231,9 @@ service cloud.firestore {
         && inviteAfter.claimedBy == uid
         && inviteAfter.familyId == familyId
         && inviteAfter.role == data.role
-        && groupIdFor(data) == groupIdFor(inviteAfter);
+        && groupIdFor(data) == groupIdFor(inviteAfter)
+        && validGroupMembership(data)
+        && groupIdsFor(data).size() == 1;
     }
 
     function validInviteCreate(data) {
@@ -331,11 +350,12 @@ service cloud.firestore {
       let changed = after.diff(before).affectedKeys();
       return isFamilyOwner(before.familyId)
         && before.role == 'member'
-        && changed.hasOnly(['status', 'groupId'])
+        && changed.hasOnly(['status', 'groupId', 'groupIds'])
         && after.status in ['active', 'revoked']
-        && groupIdFor(after) is string
+        && validGroupMembership(after)
         && memberAfter.status == after.status
         && groupIdFor(memberAfter) == groupIdFor(after)
+        && groupIdsFor(memberAfter) == groupIdsFor(after)
         && memberAfter.familyId == before.familyId
         && memberAfter.uid == uid
         && memberAfter.role == before.role;
@@ -348,11 +368,12 @@ service cloud.firestore {
         && request.auth.uid == uid
         && before.role == 'owner'
         && isFamilyOwner(before.familyId)
-        && changed.hasOnly(['groupId', 'shareGroupIds'])
-        && groupIdFor(after) is string
+        && changed.hasOnly(['groupId', 'groupIds', 'shareGroupIds'])
+        && validGroupMembership(after)
         && ownerShareGroupsFor(after) is list
         && ownerShareGroupsFor(after).size() <= 20
         && groupIdFor(memberAfter) == groupIdFor(after)
+        && groupIdsFor(memberAfter) == groupIdsFor(after)
         && ownerShareGroupsFor(memberAfter) == ownerShareGroupsFor(after);
     }
 
@@ -391,11 +412,12 @@ service cloud.firestore {
       let changed = after.diff(before).affectedKeys();
       return isFamilyOwner(familyId)
         && before.role == 'member'
-        && changed.hasOnly(['status', 'groupId'])
+        && changed.hasOnly(['status', 'groupId', 'groupIds'])
         && after.status in ['active', 'revoked']
-        && groupIdFor(after) is string
+        && validGroupMembership(after)
         && accessAfter.status == after.status
         && groupIdFor(accessAfter) == groupIdFor(after)
+        && groupIdsFor(accessAfter) == groupIdsFor(after)
         && accessAfter.familyId == familyId
         && accessAfter.role == before.role;
     }
@@ -407,11 +429,12 @@ service cloud.firestore {
         && request.auth.uid == uid
         && before.role == 'owner'
         && isFamilyOwner(familyId)
-        && changed.hasOnly(['groupId', 'shareGroupIds'])
-        && groupIdFor(after) is string
+        && changed.hasOnly(['groupId', 'groupIds', 'shareGroupIds'])
+        && validGroupMembership(after)
         && ownerShareGroupsFor(after) is list
         && ownerShareGroupsFor(after).size() <= 20
         && groupIdFor(accessAfter) == groupIdFor(after)
+        && groupIdsFor(accessAfter) == groupIdsFor(after)
         && ownerShareGroupsFor(accessAfter) == ownerShareGroupsFor(after);
     }
 
@@ -502,8 +525,8 @@ service cloud.firestore {
             hasActiveAccess(familyId)
             && resource.data.status == 'active'
             && (
-              (resource.data.role == 'member' && groupIdFor(resource.data) == groupIdFor(myAccess().data))
-              || (resource.data.role == 'owner' && ownerShareGroupsFor(resource.data).hasAny([groupIdFor(myAccess().data)]))
+              (resource.data.role == 'member' && groupIdsFor(resource.data).hasAny(groupIdsFor(myAccess().data)))
+              || (resource.data.role == 'owner' && ownerShareGroupsFor(resource.data).hasAny(groupIdsFor(myAccess().data)))
             )
           );
         allow create: if validClaimedMemberCreate(familyId, uid, request.resource.data);
@@ -519,7 +542,7 @@ service cloud.firestore {
 
       match /groups/{groupId} {
         allow get: if isFamilyOwner(familyId)
-          || (hasActiveAccess(familyId) && groupId == groupIdFor(myAccess().data));
+          || (hasActiveAccess(familyId) && groupIdsFor(myAccess().data).hasAny([groupId]));
         allow list: if isFamilyOwner(familyId);
         allow create: if isFamilyOwner(familyId)
           && request.resource.data.keys().hasAll(['schemaVersion', 'name', 'createdAt', 'updatedAt'])
@@ -549,7 +572,14 @@ service cloud.firestore {
           && resource.data.emailLower == request.auth.token.email.lower()
         )
       );
-      allow list: if signedIn() && isFamilyOwner(resource.data.familyId);
+      allow list: if signedIn() && (
+        isFamilyOwner(resource.data.familyId)
+        || (verifiedEmail()
+          && request.query.limit != null
+          && request.query.limit <= 3
+          && resource.data.emailLower == request.auth.token.email.lower()
+          && resource.data.status == 'pending')
+      );
       allow create: if validInviteCreate(request.resource.data);
       allow update: if (
         isFamilyOwner(resource.data.familyId)

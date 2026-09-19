@@ -6,9 +6,9 @@ const text = async path => readFile(new URL(`../../${path}`, import.meta.url), "
 
 test("the current release versions the family burst UI shell", async () => {
   const [pkg, main, sw] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js")]);
-  assert.equal(JSON.parse(pkg).version, "0.14.0");
-  assert.match(main, /APP_VERSION = "0\.14\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.14\.0-science-builders-timers/);
+  assert.equal(JSON.parse(pkg).version, "0.15.0");
+  assert.match(main, /APP_VERSION = "0\.15\.0"/);
+  assert.match(sw, /logtogether-shell-v0\.15\.0-reliability-groups-recording/);
 });
 
 test("received Poke rain is substantially larger without changing the animation engine", async () => {

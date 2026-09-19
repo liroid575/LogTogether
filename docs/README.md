@@ -25,10 +25,12 @@ Setup and operational documentation:
 
 Version-specific release notes are stored in [`releases/`](releases/).
 
+- [v0.15.0 — reliability, groups, and recording polish](releases/V0.15.0.md)
 - [v0.14.0 — exercise schema, builders, and timer consistency](releases/V0.14.0.md)
 
 ## Research
 
+- [v0.15.0 exercise and reliability audit](research/LogTogether_v0.15.0_exercise_and_reliability_audit.xlsx) — exact 156-exercise recording audit, v0.15 product/security decisions, and sources
 - [v0.14.0 exercise and UX audit](research/LogTogether_v0.14.0_exercise_and_ux_audit.xlsx) — exercise-by-exercise defaults, product decisions, device metrics, and sources
 
 ## Archive

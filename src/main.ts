@@ -7,7 +7,7 @@ import { clearLocalTestState, createBlankWorkout, createLocalBackup, forgetRemem
 import { diagnosticsJson } from "./core/diagnostics.js";
 import { familyPrivacySummary } from "./core/privacy.js";
 import type { AppState, CustomSupplement, ExerciseCategory, ExerciseDefinition, ExerciseLibraryGroup, FamilyProfileSharing, GoalDifficulty, HikeBadgePreference, HikeRecord, HydrationDay, Locale, NotificationPreferences, PersonalActivityId, ProfileData, SetEntry, SupplementEntry, SupplementUnit, WorkoutExerciseEntry, WorkoutRecord, WorkoutRoutine } from "./core/types.js";
-import { appCheckRuntimeStatus, claimFamilyInvite, cloudModeEnabled, createFamilyGroup, createFamilyInvite, DEFAULT_GROUP_ID, deleteCloudBadge, deleteCloudHike, deleteCloudWorkout, deleteFamilyGroup, disablePushNotifications, enablePushNotifications, ensureCloudGroupModel, loadCloudCompanionState, loadCloudHikes, loadCloudMembership, loadCloudWorkouts, loadPokeWallet, loadBackendDiagnostics, sendTestNotification, observeFirebaseAuth, consumeGoogleRedirectSignIn, googleSignInRedirectPending, observeSocialInbox, pushRegistrationStatus, renameFamilyGroup, saveCloudBadges, saveCloudBodyMetrics, saveCloudHike, saveCloudHydrationDay, saveCloudPreferences, saveCloudSupplementDay, saveCloudWorkout, saveFamilyDailySummary, saveFamilyWeeklySummary, seedGoogleMemberIdentity, sendPoke, setFamilyMemberAccessStatus, setFamilyMemberGroup, setOwnerShareGroups, updateMyFamilyDisplayName, signInWithGoogle, signOutFirebase } from "./services/firebase-client.js";
+import { appCheckRuntimeStatus, claimFamilyInvite, cloudModeEnabled, createFamilyGroup, createFamilyInvite, DEFAULT_GROUP_ID, deleteCloudBadge, deleteCloudHike, deleteCloudWorkout, deleteFamilyGroup, disablePushNotifications, enablePushNotifications, ensureCloudGroupModel, findRecoverableFamilyInvites, loadCloudCompanionState, loadCloudHikes, loadCloudMembership, loadCloudWorkouts, loadPokeWallet, loadBackendDiagnostics, sendTestNotification, observeFirebaseAuth, observePokeWallet, consumeGoogleRedirectSignIn, googleSignInRedirectPending, observeSocialInbox, pushRegistrationStatus, renameFamilyGroup, saveCloudBadges, saveCloudBodyMetrics, saveCloudHike, saveCloudHydrationDay, saveCloudPreferences, saveCloudSupplementDay, saveCloudWorkout, saveFamilyDailySummary, saveFamilyWeeklySummary, seedGoogleMemberIdentity, sendPoke, setFamilyMemberAccessStatus, setFamilyMemberGroups, setOwnerShareGroups, updateMyFamilyDisplayName, signInWithGoogle, signOutFirebase } from "./services/firebase-client.js";
 import type { BackendDiagnostics, CloudBadgeRecord, CloudCompanionSnapshot, CloudFamilyDailySummary, CloudFamilyWeeklySummary, CloudHikeEnvelope, CloudMembership, CloudWorkoutEnvelope, CreatedFamilyInvite, FirebaseAuthUser, SocialInboxEvent } from "./services/firebase-client.js";
 import { clearPrivateImages, deletePrivateImage, getPrivateImage, savePrivateImage } from "./core/media.js";
 import { parseGpx } from "./core/gpx.js";
@@ -38,7 +38,7 @@ type HistoryActivity =
   | { kind: "workout"; id: string; date: string; workout: WorkoutRecord }
   | { kind: "hike"; id: string; date: string; hike: HikeRecord };
 
-const APP_VERSION = "0.14.0";
+const APP_VERSION = "0.15.0";
 
 // TEMPORARY v0.11.x owner-only visual regression harness.
 // Remove this constant + renderDeveloperEffectTests/bind handlers when family-alpha visual testing is complete.
@@ -306,6 +306,8 @@ class FamilyExerciseApp {
   private familyNotificationPromptOpen = false;
   private socialInboxUnsubscribe: (()=>void) | null = null;
   private socialInboxStarting = false;
+  private pokeWalletUnsubscribe: (()=>void) | null = null;
+  private pokeWalletStarting = false;
   private pokeBalance = 0;
   private pokeBusy = false;
   private backendDiagnostics: BackendDiagnostics | null = null;
@@ -442,7 +444,9 @@ class FamilyExerciseApp {
   }
 
   private async handleObservedAuthState(user: FirebaseAuthUser | null): Promise<void> {
-    const alreadyResolved = Boolean(user && this.authUser?.uid === user.uid && this.cloudMembership?.access.status === "active");
+    const previousUid = this.authUser?.uid ?? null;
+    const alreadyResolved = Boolean(user && previousUid === user.uid && this.cloudMembership?.access.status === "active");
+    if (!user || (previousUid && user.uid !== previousUid)) this.stopPokeWalletObserver();
     this.authUser = user;
     this.authReady = true;
     this.authError = null;
@@ -550,6 +554,7 @@ class FamilyExerciseApp {
     this.offlineAccount = null;
     rememberLocalScope(this.localScope || "guest");
     this.cloudMembership = null;
+    this.stopPokeWalletObserver();
     this.clearSharedCloudSnapshots();
     if (message) this.cloudMembershipError = message;
     try { await signOutFirebase(); } catch { /* Access is already fail-closed in rules. */ }
@@ -565,9 +570,25 @@ class FamilyExerciseApp {
     try {
       let membership = await loadCloudMembership(user);
       let claimedNow = false;
+      let recoveredInvite = false;
       if (!membership && this.pendingInviteCode) {
         membership = await claimFamilyInvite(user, this.pendingInviteCode);
         claimedNow = true;
+      } else if (!membership && !this.pendingInviteCode && user.emailVerified && user.email) {
+        // iOS keeps an installed Home Screen web app in a storage container that
+        // is separate from Safari. If the QR token was opened in Safari before
+        // installation, recover the pending invite from the verified Google email
+        // instead of pretending browser localStorage can cross that boundary.
+        const recoverable = await findRecoverableFamilyInvites(user);
+        if (recoverable.length === 1) {
+          membership = await claimFamilyInvite(user, recoverable[0]!.id);
+          claimedNow = true;
+          recoveredInvite = true;
+        } else if (recoverable.length > 1) {
+          throw new Error(this.locale === "zh-TW"
+            ? "找到多個待處理邀請。為避免加入錯誤家庭，請重新掃描你要使用的邀請 QR code。"
+            : "More than one pending invitation matches this Google account. Re-scan the invitation QR code you intend to use so LogTogether does not guess the wrong family.");
+        }
       }
 
       if (!membership || membership.access.status !== "active") {
@@ -605,6 +626,8 @@ class FamilyExerciseApp {
       membership = await seedGoogleMemberIdentity(user, membership);
       this.cloudMembership = membership;
       this.seedLocalIdentity(user, membership);
+      void this.ensurePokeWalletObserver();
+      if (recoveredInvite) this.toast(this.locale === "zh-TW" ? "已在安裝版 LogTogether 找回並接受你的 Cloud 邀請" : "Cloud invitation recovered and accepted in the installed LogTogether app");
       // Social events are session-global, not tied to visiting Family/Settings.
       // Start the private inbox listener as soon as Cloud membership is valid so
       // Pokes can celebrate on Home, Workout, Water, History or Settings too.
@@ -1499,7 +1522,7 @@ class FamilyExerciseApp {
       const label = this.authUser.displayName || this.authUser.email || this.authUser.uid;
       const group = this.cloudMembership?.access.role === "owner"
         ? (this.locale === "zh-TW" ? "Cloud 擁有者" : "Cloud owner")
-        : this.groupName(this.cloudMembership?.access.groupId);
+        : this.groupNames(this.cloudMembership?.access.groupIds ?? [this.cloudMembership?.access.groupId ?? DEFAULT_GROUP_ID]);
       return `<div class="auth-setting"><div class="auth-identity">${this.authUser.photoURL ? `<img class="auth-avatar" src="${escapeHtml(this.authUser.photoURL)}" alt="">` : ""}<div><strong>${escapeHtml(label)}</strong><span>${this.locale === "zh-TW" ? "Cloud 已授權" : "Cloud authorized"} · ${escapeHtml(group)}</span><small>${escapeHtml(this.authUser.email ?? "")}</small></div></div><button class="btn small" data-action="google-sign-out">${this.locale === "zh-TW" ? "切換為 Local" : "Switch to Local"}</button></div>`;
     }
     if (!this.networkOnline && this.offlineAccount?.cloudApproved) {
@@ -1532,6 +1555,99 @@ class FamilyExerciseApp {
     if (match?.name) return match.name;
     if (id === DEFAULT_GROUP_ID) return this.locale === "zh-TW" ? "家庭" : "Family";
     return id;
+  }
+
+  private groupNames(groupIds: string[]): string {
+    const names = [...new Set(groupIds)].map(groupId => this.groupName(groupId));
+    if (!names.length) return this.groupName(DEFAULT_GROUP_ID);
+    if (names.length <= 2) return names.join(" · ");
+    return `${names[0]} +${names.length - 1}`;
+  }
+
+  private movePositionMenu(dataAttribute: string, index: number, total: number): string {
+    if (total <= 1) return "";
+    const options = Array.from({length:total},(_,position)=>`<option value="${position}" ${position===index?"selected":""}>${this.locale === "zh-TW" ? `位置 ${position+1}` : `Position ${position+1}`}</option>`).join("");
+    return `<details class="reorder-position-menu"><summary aria-label="${this.locale === "zh-TW" ? "移動位置選單" : "Move position menu"}" title="${this.locale === "zh-TW" ? "移動位置" : "Move position"}">⋯</summary><label><span>${this.locale === "zh-TW" ? "移到" : "Move to"}</span><select class="select compact-select" data-${dataAttribute}="${index}">${options}</select></label></details>`;
+  }
+
+  private bindSmoothReorder(
+    itemSelector: string,
+    handleSelector: string,
+    commit: (from: number, to: number) => void,
+    beforeStart?: () => void
+  ): void {
+    root.querySelectorAll<HTMLElement>(handleSelector).forEach(handle => handle.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || !event.isPrimary) return;
+      const source = handle.closest<HTMLElement>(itemSelector);
+      const parent = source?.parentElement;
+      if (!source || !parent) return;
+      const currentItems = () => Array.from(parent.querySelectorAll<HTMLElement>(itemSelector));
+      const from = currentItems().indexOf(source);
+      if (from < 0) return;
+      beforeStart?.();
+      event.preventDefault();
+      const initialRect = source.getBoundingClientRect();
+      const offsetY = event.clientY - initialRect.top;
+      const ghost = source.cloneNode(true) as HTMLElement;
+      ghost.classList.remove("smooth-reorder-source");
+      ghost.classList.add("smooth-reorder-ghost");
+      ghost.style.width = `${initialRect.width}px`;
+      ghost.style.height = `${initialRect.height}px`;
+      ghost.setAttribute("aria-hidden", "true");
+      ghost.querySelectorAll<HTMLElement>("button,input,select,textarea,a,summary").forEach(node => node.tabIndex = -1);
+      document.body.appendChild(ghost);
+      source.classList.add("smooth-reorder-source");
+      document.body.classList.add("reorder-active");
+
+      const positionGhost = (clientX:number,clientY:number) => {
+        ghost.style.left = `${Math.max(8,Math.min(window.innerWidth-initialRect.width-8,clientX-initialRect.width/2))}px`;
+        ghost.style.top = `${clientY-offsetY}px`;
+      };
+      positionGhost(event.clientX,event.clientY);
+
+      const flipAround = (move:()=>void) => {
+        const before = new Map(currentItems().filter(item=>item!==source).map(item=>[item,item.getBoundingClientRect()] as const));
+        move();
+        if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        currentItems().filter(item=>item!==source).forEach(item=>{
+          const oldRect=before.get(item); if(!oldRect) return;
+          const next=item.getBoundingClientRect();
+          const dy=oldRect.top-next.top;
+          if(Math.abs(dy)<1) return;
+          item.style.transition="none"; item.style.transform=`translateY(${dy}px)`;
+          requestAnimationFrame(()=>{ item.style.transition="transform 160ms cubic-bezier(.2,.8,.2,1)"; item.style.transform=""; });
+        });
+      };
+
+      const onMove = (moveEvent:PointerEvent) => {
+        positionGhost(moveEvent.clientX,moveEvent.clientY);
+        const edge=72;
+        if(moveEvent.clientY<edge) window.scrollBy(0,-Math.min(18,Math.ceil((edge-moveEvent.clientY)/4)));
+        else if(moveEvent.clientY>window.innerHeight-edge) window.scrollBy(0,Math.min(18,Math.ceil((moveEvent.clientY-(window.innerHeight-edge))/4)));
+        const target=document.elementFromPoint(moveEvent.clientX,moveEvent.clientY)?.closest<HTMLElement>(itemSelector);
+        if(!target||target===source||target.parentElement!==parent) return;
+        const rect=target.getBoundingClientRect();
+        const beforeTarget=moveEvent.clientY<rect.top+rect.height/2;
+        const reference=beforeTarget?target:target.nextSibling;
+        if(reference===source||(!beforeTarget&&source.nextSibling===reference)||(beforeTarget&&source.nextSibling===target)) return;
+        flipAround(()=>parent.insertBefore(source,reference));
+      };
+
+      const finish = () => {
+        window.removeEventListener("pointermove",onMove);
+        window.removeEventListener("pointerup",finish);
+        window.removeEventListener("pointercancel",finish);
+        const to=currentItems().indexOf(source);
+        ghost.remove();
+        source.classList.remove("smooth-reorder-source");
+        document.body.classList.remove("reorder-active");
+        currentItems().forEach(item=>{item.style.transition="";item.style.transform="";});
+        if(to>=0&&to!==from) commit(from,to);
+      };
+      window.addEventListener("pointermove",onMove,{passive:true});
+      window.addEventListener("pointerup",finish,{once:true});
+      window.addEventListener("pointercancel",finish,{once:true});
+    }));
   }
 
   private applyTheme(): void {
@@ -1914,6 +2030,28 @@ class FamilyExerciseApp {
     }
   }
 
+  private stopPokeWalletObserver(): void {
+    this.pokeWalletUnsubscribe?.();
+    this.pokeWalletUnsubscribe = null;
+    this.pokeWalletStarting = false;
+    this.pokeBalance = 0;
+  }
+
+  private async ensurePokeWalletObserver(): Promise<void> {
+    if (this.pokeWalletUnsubscribe || this.pokeWalletStarting || !this.authUser || this.cloudMembership?.access.status !== "active") return;
+    this.pokeWalletStarting = true;
+    try {
+      this.pokeWalletUnsubscribe = await observePokeWallet(this.authUser, wallet => {
+        this.pokeBalance = wallet.balance;
+        this.render();
+      });
+    } catch (error) {
+      console.warn("Poke wallet observer:", error);
+    } finally {
+      this.pokeWalletStarting = false;
+    }
+  }
+
   private async refreshPushAndPokeState(renderAfter = true): Promise<void> {
     if (!this.authUser || this.cloudMembership?.access.status !== "active") {
       this.pushStatus = null;
@@ -1929,6 +2067,7 @@ class FamilyExerciseApp {
       }
       this.pushStatus = status;
       this.pokeBalance = wallet.balance;
+      void this.ensurePokeWalletObserver();
       void this.ensureSocialInboxObserver();
     } catch (error) {
       console.warn("Push/Poke state:", error);
@@ -2700,7 +2839,7 @@ class FamilyExerciseApp {
       if (!items.length) return "";
       return `<optgroup label="${escapeHtml(this.exerciseLibraryGroupLabel(group))}">${items.map(exercise => `<option value="${escapeHtml(exercise.id)}" ${exercise.id === selected ? "selected" : ""}>${escapeHtml(exercise.names[this.locale])}</option>`).join("")}</optgroup>`;
     }).join("");
-    return `<form id="circuit-builder" class="card circuit-builder"><div class="row"><div><strong>${this.locale === "zh-TW" ? "循環訓練" : "Circuit"}</strong><div class="small muted">${this.locale === "zh-TW" ? "設定要重複幾輪，以及每輪依序完成的動作。拖曳把手可排序，也可使用上移／下移。" : "Choose rounds and movement order. Drag the handle to reorder, or use Up and Down."}</div></div></div><div class="form-two"><div class="field"><label>${this.locale === "zh-TW" ? "名稱" : "Name"}</label><input class="input" name="circuitName" maxlength="50" value="${escapeHtml(this.circuitDraftName)}"></div><div class="field"><label>${this.locale === "zh-TW" ? "輪數" : "Rounds"}</label><input class="input" name="circuitRounds" type="number" min="1" max="10" value="${this.circuitDraftRounds}"><small>${this.locale === "zh-TW" ? "1 輪 = 依序完成下方所有動作" : "1 round = complete every movement below in order"}</small></div></div><div class="circuit-rows">${this.circuitDraftRows.map((row,index)=>{ const definition=exerciseById(row.exerciseId); return `<section class="circuit-row" draggable="true" data-circuit-drag="${index}"><div class="circuit-row-header"><button type="button" class="drag-handle-button" data-circuit-drag-handle="${index}" aria-label="${this.locale === "zh-TW" ? "拖曳排序" : "Drag to reorder"}">↕</button><span class="circuit-order">${index+1}</span><strong>${this.locale === "zh-TW" ? `動作 ${index+1}` : `Movement ${index+1}`}</strong><div class="circuit-order-buttons"><button type="button" class="icon-btn" data-circuit-move="${index}" data-direction="-1" ${index===0?"disabled":""} aria-label="${this.locale === "zh-TW" ? "上移" : "Move up"}">↑</button><button type="button" class="icon-btn" data-circuit-move="${index}" data-direction="1" ${index===this.circuitDraftRows.length-1?"disabled":""} aria-label="${this.locale === "zh-TW" ? "下移" : "Move down"}">↓</button><button type="button" class="icon-btn subtle-danger" data-circuit-remove="${index}" ${this.circuitDraftRows.length <= 1 ? "disabled" : ""} aria-label="${this.locale === "zh-TW" ? "刪除動作" : "Remove movement"}">${icon("trash")}</button></div></div><div class="circuit-builder-exercise"><select class="select" name="exercise_${index}" data-circuit-exercise-index="${index}">${options(row.exerciseId)}</select>${definition ? `<div class="exercise-preview-card compact-preview"><span>${escapeHtml(this.exercisePreviewHint(definition))}</span><a class="exercise-example-link" href="${escapeHtml(this.exerciseImageSearchUrl(definition))}" target="_blank" rel="noopener noreferrer">${this.locale === "zh-TW" ? "查看圖片示範" : "View image examples"}</a></div>` : ""}</div>${this.circuitTargetFields(row,index)}</section>`; }).join("")}</div><div class="row"><button type="button" class="btn small" data-action="add-circuit-row">${icon("plus")} ${this.locale === "zh-TW" ? "新增動作" : "Add movement"}</button><button class="btn primary" type="submit">${this.locale === "zh-TW" ? "開始循環" : "Start circuit"}</button></div></form>`;
+    return `<form id="circuit-builder" class="card circuit-builder"><div class="row"><div><strong>${this.locale === "zh-TW" ? "循環訓練" : "Circuit"}</strong><div class="small muted">${this.locale === "zh-TW" ? "設定要重複幾輪，以及每輪依序完成的動作。按住拖曳把手可平順排序；「⋯」可直接選擇目的位置。" : "Choose rounds and movement order. Hold and drag the handle to reorder smoothly; use “⋯” to choose a destination directly."}</div></div></div><div class="form-two"><div class="field"><label>${this.locale === "zh-TW" ? "名稱" : "Name"}</label><input class="input" name="circuitName" maxlength="50" value="${escapeHtml(this.circuitDraftName)}"></div><div class="field"><label>${this.locale === "zh-TW" ? "輪數" : "Rounds"}</label><input class="input" name="circuitRounds" type="number" min="1" max="10" value="${this.circuitDraftRounds}"><small>${this.locale === "zh-TW" ? "1 輪 = 依序完成下方所有動作" : "1 round = complete every movement below in order"}</small></div></div><div class="circuit-rows">${this.circuitDraftRows.map((row,index)=>{ const definition=exerciseById(row.exerciseId); return `<section class="circuit-row" data-circuit-drag="${index}"><div class="circuit-row-header"><button type="button" class="drag-handle-button" data-circuit-drag-handle="${index}" aria-label="${this.locale === "zh-TW" ? "拖曳排序" : "Drag to reorder"}">⠿</button><span class="circuit-order">${index+1}</span><strong>${this.locale === "zh-TW" ? `動作 ${index+1}` : `Movement ${index+1}`}</strong><div class="circuit-order-buttons">${this.movePositionMenu("circuit-position",index,this.circuitDraftRows.length)}<button type="button" class="icon-btn subtle-danger" data-circuit-remove="${index}" ${this.circuitDraftRows.length <= 1 ? "disabled" : ""} aria-label="${this.locale === "zh-TW" ? "刪除動作" : "Remove movement"}">${icon("trash")}</button></div></div><div class="circuit-builder-exercise"><select class="select" name="exercise_${index}" data-circuit-exercise-index="${index}">${options(row.exerciseId)}</select>${definition ? `<div class="exercise-preview-card compact-preview"><span>${escapeHtml(this.exercisePreviewHint(definition))}</span><a class="exercise-example-link" href="${escapeHtml(this.exerciseImageSearchUrl(definition))}" target="_blank" rel="noopener noreferrer">${this.locale === "zh-TW" ? "查看圖片示範" : "View image examples"}</a></div>` : ""}</div>${this.circuitTargetFields(row,index)}</section>`; }).join("")}</div><div class="row"><button type="button" class="btn small" data-action="add-circuit-row">${icon("plus")} ${this.locale === "zh-TW" ? "新增動作" : "Add movement"}</button><button class="btn primary" type="submit">${this.locale === "zh-TW" ? "開始循環" : "Start circuit"}</button></div></form>`;
   }
 
   private renderRecent(limit = 8): string {
@@ -3002,7 +3141,7 @@ class FamilyExerciseApp {
     const actualPerfect=assessDays>0 && Array.from({length:assessDays},(_,i)=>{ const key=`${year}-${String(month+1).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`; const d=byDate.get(key); return !!d && d.totalMl>=d.targetMl; }).every(Boolean);
     const perfect=actualPerfect && new Date(year,month+1,1).getTime()<=now.getTime();
     const cells:string[]=[]; for(let i=0;i<offset;i++)cells.push('<div class="calendar-cell blank"></div>');
-    for(let day=1;day<=days;day++){ const key=`${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`; const d=byDate.get(key); const supplements=supplementByDate.get(key) ?? []; const hit=!!d&&d.totalMl>=d.targetMl; const selected=this.selectedWaterDate===key; const today=key===localDateKey(new Date()); cells.push(`<button class="calendar-cell water-day ${hit?"water-hit":""} ${supplements.length?"has-supplement":""} ${today?"today":""} ${selected?"selected":""}" data-water-day="${key}"><span>${day}</span>${d?.entries.length ? `<i class="water-day-dot"></i>`:""}${supplements.length?`<b class="supplement-day-dot" title="${supplements.length} ${this.locale === "zh-TW" ? "筆補充品" : "supplement entries"}">●</b>`:""}</button>`); }
+    for(let day=1;day<=days;day++){ const key=`${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`; const d=byDate.get(key); const supplements=supplementByDate.get(key) ?? []; const hit=!!d&&d.totalMl>=d.targetMl; const selected=this.selectedWaterDate===key; const today=key===localDateKey(new Date()); cells.push(`<button class="calendar-cell water-day ${hit?"water-hit":""} ${supplements.length?"has-supplement":""} ${today?"today":""} ${selected?"selected":""}" data-water-day="${key}"><span>${day}</span>${supplements.length?`<b class="supplement-day-dot" title="${supplements.length} ${this.locale === "zh-TW" ? "筆補充品" : "supplement entries"}">●</b>`:""}</button>`); }
     const selected=byDate.get(this.selectedWaterDate);
     const selectedEntries=(selected?.entries ?? []).slice().sort((a,b)=>b.at.localeCompare(a.at));
     const selectedSupplements=this.supplementEntriesForDate(this.selectedWaterDate).slice().sort((a,b)=>b.at.localeCompare(a.at));
@@ -3021,14 +3160,14 @@ class FamilyExerciseApp {
       return `<details class="entry-editor supplement-entry"><summary>${summary}<span class="entry-edit-label">${this.locale === "zh-TW" ? "編輯" : "Edit"}</span></summary><div class="entry-edit-grid supplement-edit-grid"><label class="field entry-edit-wide"><span>${this.locale === "zh-TW" ? "補充品" : "Supplement"}</span><select class="select" data-supplement-entry-name="${escapeHtml(entry.id)}">${options}</select></label><label class="field"><span>${this.locale === "zh-TW" ? "數量" : "Amount"}</span><input class="input" type="number" min="0.01" max="100000" step="0.01" value="${entry.amount ?? 1}" data-supplement-entry-amount="${escapeHtml(entry.id)}"></label><label class="field"><span>${this.locale === "zh-TW" ? "單位" : "Unit"}</span><select class="select" data-supplement-entry-unit="${escapeHtml(entry.id)}">${units}</select></label><label class="field entry-edit-date"><span>${this.locale === "zh-TW" ? "日期與時間" : "Date & time"}</span><input class="input date-input" type="datetime-local" max="${maxDateTime}" value="${escapeHtml(this.toDateTimeLocal(entry.at))}" data-supplement-entry-at="${escapeHtml(entry.id)}"></label><div class="entry-edit-actions"><button class="btn small" data-save-supplement="${escapeHtml(entry.id)}" data-supplement-date="${escapeHtml(this.selectedWaterDate)}">${this.locale === "zh-TW" ? "儲存" : "Save"}</button><button class="icon-btn subtle-danger mini-icon" data-remove-supplement="${escapeHtml(entry.id)}" data-supplement-date="${escapeHtml(this.selectedWaterDate)}" aria-label="${this.locale === "zh-TW" ? "刪除補充品紀錄" : "Delete supplement entry"}">${icon("trash")}</button></div></div></details>`;
     }).join("") : `<div class="small muted">${this.locale === "zh-TW" ? "這天沒有補充品紀錄。" : "No supplement entries on this day."}</div>`;
     const supplementCount=selectedSupplements.length;
-    return `<section class="section"><div class="section-header"><h2 class="section-title">${this.locale === "zh-TW" ? "飲水與補充品月曆" : "Water & supplement calendar"}${perfect?` <span class="blue-badge">◆</span>`:""}</h2><div class="calendar-nav"><button class="icon-btn mini-icon" data-water-calendar-nav="prev">‹</button><strong>${escapeHtml(first.toLocaleDateString(this.locale,{month:"long",year:"numeric"}))}</strong><button class="icon-btn mini-icon" data-water-calendar-nav="next">›</button></div></div><div class="card calendar-card water-calendar ${perfect?"perfect-water-month":""}"><div class="weekday-row">${(this.locale === "zh-TW" ? ["一","二","三","四","五","六","日"] : ["M","T","W","T","F","S","S"]).map(d=>`<span>${d}</span>`).join("")}</div><div class="calendar-grid">${cells.join("")}</div></div><p class="calendar-legend small muted">${this.locale==="zh-TW"?"💧 小點：有飲水紀錄 · 藍底：飲水達標 · 紫點：有補充品紀錄":"Water dot: water logged · Blue fill: target reached · Purple dot: supplement logged"}</p><div class="card water-day-detail selected-water-detail"><div class="water-day-detail-head"><div><strong>${escapeHtml(new Date(`${this.selectedWaterDate}T12:00:00`).toLocaleDateString(this.locale,{weekday:"long",month:"short",day:"numeric",year:"numeric"}))}</strong><span>${selected ? `${selected.totalMl.toLocaleString()} / ${selected.targetMl.toLocaleString()} mL${selected.totalMl>=selected.targetMl ? " ✓" : ""}` : `0 mL`}${supplementCount ? ` · ${supplementCount} ${this.locale === "zh-TW" ? "筆補充品" : supplementCount === 1 ? "supplement" : "supplements"}` : ""}</span></div></div><div class="day-log-section"><div class="day-log-heading"><div class="day-log-title">${icon("drop")}<strong>${this.locale === "zh-TW" ? "飲水" : "Water"}</strong></div>${selectedEntries.length ? `<button class="btn small ghost entry-mode-toggle" data-action="toggle-water-entry-edit">${this.waterEntriesEditing ? (this.locale === "zh-TW" ? "完成" : "Done") : (this.locale === "zh-TW" ? "編輯" : "Edit")}</button>` : ""}</div><div class="water-entry-list">${waterRows}</div></div><div class="day-log-section"><div class="day-log-heading"><div class="day-log-title">${icon("waterPill")}<strong>${this.locale === "zh-TW" ? "補充品" : "Supplements"}</strong></div>${selectedSupplements.length ? `<button class="btn small ghost entry-mode-toggle" data-action="toggle-supplement-entry-edit">${this.supplementEntriesEditing ? (this.locale === "zh-TW" ? "完成" : "Done") : (this.locale === "zh-TW" ? "編輯" : "Edit")}</button>` : ""}</div><div class="supplement-entry-list">${supplementRows}</div></div></div></section>`;
+    return `<section class="section"><div class="section-header"><h2 class="section-title">${this.locale === "zh-TW" ? "飲水與補充品月曆" : "Water & supplement calendar"}${perfect?` <span class="blue-badge">◆</span>`:""}</h2><div class="calendar-nav"><button class="icon-btn mini-icon" data-water-calendar-nav="prev">‹</button><strong>${escapeHtml(first.toLocaleDateString(this.locale,{month:"long",year:"numeric"}))}</strong><button class="icon-btn mini-icon" data-water-calendar-nav="next">›</button></div></div><div class="card calendar-card water-calendar ${perfect?"perfect-water-month":""}"><div class="weekday-row">${(this.locale === "zh-TW" ? ["一","二","三","四","五","六","日"] : ["M","T","W","T","F","S","S"]).map(d=>`<span>${d}</span>`).join("")}</div><div class="calendar-grid">${cells.join("")}</div></div><p class="calendar-legend small muted">${this.locale==="zh-TW"?"藍底：飲水達標 · 紫點：有補充品紀錄":"Blue fill: target reached · Purple dot: supplement logged"}</p><div class="card water-day-detail selected-water-detail"><div class="water-day-detail-head"><div><strong>${escapeHtml(new Date(`${this.selectedWaterDate}T12:00:00`).toLocaleDateString(this.locale,{weekday:"long",month:"short",day:"numeric",year:"numeric"}))}</strong><span>${selected ? `${selected.totalMl.toLocaleString()} / ${selected.targetMl.toLocaleString()} mL${selected.totalMl>=selected.targetMl ? " ✓" : ""}` : `0 mL`}${supplementCount ? ` · ${supplementCount} ${this.locale === "zh-TW" ? "筆補充品" : supplementCount === 1 ? "supplement" : "supplements"}` : ""}</span></div></div><div class="day-log-section"><div class="day-log-heading"><div class="day-log-title">${icon("drop")}<strong>${this.locale === "zh-TW" ? "飲水" : "Water"}</strong></div>${selectedEntries.length ? `<button class="btn small ghost entry-mode-toggle" data-action="toggle-water-entry-edit">${this.waterEntriesEditing ? (this.locale === "zh-TW" ? "完成" : "Done") : (this.locale === "zh-TW" ? "編輯" : "Edit")}</button>` : ""}</div><div class="water-entry-list">${waterRows}</div></div><div class="day-log-section"><div class="day-log-heading"><div class="day-log-title">${icon("waterPill")}<strong>${this.locale === "zh-TW" ? "補充品" : "Supplements"}</strong></div>${selectedSupplements.length ? `<button class="btn small ghost entry-mode-toggle" data-action="toggle-supplement-entry-edit">${this.supplementEntriesEditing ? (this.locale === "zh-TW" ? "完成" : "Done") : (this.locale === "zh-TW" ? "編輯" : "Edit")}</button>` : ""}</div><div class="supplement-entry-list">${supplementRows}</div></div></div></section>`;
   }
 
   private renderFamily(): string {
     const score = weeklyGoalScore(this.state.workouts, this.state.hikes, this.currentWeightKg(), this.state.goals!, this.state.hydration, this.state.hydrationHistory ?? []);
     const membership = this.cloudMembership?.access.status === "active" ? this.cloudMembership : null;
     const cloudActive = Boolean(this.authUser && membership);
-    const groupName = membership ? this.groupName(membership.access.groupId) : "";
+    const groupName = membership ? this.groupNames(membership.access.groupIds ?? [membership.access.groupId]) : "";
     const members = cloudActive
       ? membership!.members.filter(member => member.status === "active").map(member => ({
           id: member.uid,
@@ -3036,13 +3175,14 @@ class FamilyExerciseApp {
           role: member.role,
           isSelf: member.uid === this.authUser?.uid,
           photoURL: member.photoURL,
-          groupId: member.groupId
+          groupId: member.groupId,
+          groupIds: member.groupIds
         }))
-      : [{ id: this.state.user.id, name: this.state.user.displayName, role: "member" as const, isSelf: true, photoURL: undefined as string | undefined, groupId: "local" }];
-    if (!members.some(member => member.isSelf)) members.unshift({ id: this.state.user.id, name: this.state.user.displayName, role: membership?.access.role ?? "member", isSelf: true, photoURL: this.authUser?.photoURL ?? undefined, groupId: membership?.access.groupId ?? "local" });
+      : [{ id: this.state.user.id, name: this.state.user.displayName, role: "member" as const, isSelf: true, photoURL: undefined as string | undefined, groupId: "local", groupIds: ["local"] }];
+    if (!members.some(member => member.isSelf)) members.unshift({ id: this.state.user.id, name: this.state.user.displayName, role: membership?.access.role ?? "member", isSelf: true, photoURL: this.authUser?.photoURL ?? undefined, groupId: membership?.access.groupId ?? "local", groupIds: membership?.access.groupIds ?? [membership?.access.groupId ?? "local"] });
 
     const notice = cloudActive && membership!.access.role !== "owner"
-      ? `<section class="section"><div class="card compact family-access-notice"><div><div class="strong">${this.locale === "zh-TW" ? "群組" : "Group"}: ${escapeHtml(groupName)}</div><div class="small muted">${this.locale === "zh-TW" ? "這裡只顯示你目前群組中可見的 Cloud 成員。" : "Only Cloud members visible to your current group appear here."}</div></div><button class="btn small" data-action="open-family-settings">${this.locale === "zh-TW" ? "Cloud 設定" : "Cloud settings"}</button></div></section>`
+      ? `<section class="section"><div class="card compact family-access-notice"><div><div class="strong">${this.locale === "zh-TW" ? "群組" : "Group"}: ${escapeHtml(groupName)}</div><div class="small muted">${this.locale === "zh-TW" ? "這裡只顯示你目前群組中可見的 Cloud 成員。" : "Only Cloud members who share at least one of your groups appear here."}</div></div><button class="btn small" data-action="open-family-settings">${this.locale === "zh-TW" ? "Cloud 設定" : "Cloud settings"}</button></div></section>`
       : !cloudActive
         ? `<section class="section"><div class="card compact family-access-notice"><div><div class="strong">${this.locale === "zh-TW" ? "Local 個人模式" : "Local personal mode"}</div><div class="small muted">${this.locale === "zh-TW" ? "不需要 Google 帳號；運動、飲水與個人資料只儲存在這台裝置。收到擁有者邀請後，可以把現有 Local 資料合併到 Cloud。" : "No Google account is required. Workouts, water and profile data stay on this device. If an owner later invites you, existing Local data can be merged into Cloud."}</div></div></div></section>`
         : "";
@@ -3055,7 +3195,10 @@ class FamilyExerciseApp {
           ? `${this.locale === "zh-TW" ? "擁有者" : "Owner"} · ${count} ${this.locale === "zh-TW" ? "個分享群組" : "shared groups"}`
           : (this.locale === "zh-TW" ? "擁有者" : "Owner");
       }
-      return `${this.locale === "zh-TW" ? "群組" : "Group"}: ${this.groupName(member.groupId)}`;
+      const visibleGroupIds = membership!.access.role === "owner"
+        ? member.groupIds
+        : member.groupIds.filter(groupId => (membership!.access.groupIds ?? [membership!.access.groupId]).includes(groupId));
+      return `${this.locale === "zh-TW" ? "群組" : visibleGroupIds.length === 1 ? "Group" : "Groups"}: ${this.groupNames(visibleGroupIds)}`;
     };
 
     const renderMemberCard = (member: typeof members[number]): string => {
@@ -3283,13 +3426,16 @@ class FamilyExerciseApp {
       <div><span>${this.locale === "zh-TW" ? "任務模型" : "Mission model"}</span><strong>${this.locale === "zh-TW" ? "10 項平衡任務" : "10 balanced missions"}</strong></div>
     </div>` : `<div class="empty-mini">${this.locale === "zh-TW" ? "這週還沒有已同步的成就資料。" : "No synced weekly achievement data yet."}</div>`;
 
-    const supplementRows = weekly?.supplements.length ? weekly.supplements.map(item => {
-      const quantity = item.mixedUnits || !item.unit
-        ? `${item.entries} ${this.locale === "zh-TW" ? "筆" : item.entries === 1 ? "entry" : "entries"}`
+    const familySupplementEntries = weekly?.supplementEntries ?? [];
+    const familySupplementReview = weekly && familySupplementEntries.length
+      ? this.renderWeeklySupplementRows(familySupplementEntries.map(entry=>({date:entry.date,time:entry.time,supplementId:entry.supplementId,...(entry.customLabel?{customLabel:entry.customLabel}:{}),...(entry.amount!==undefined?{amount:entry.amount}:{}),...(entry.unit?{unit:entry.unit}:{} as {unit?:SupplementUnit})})), new Date(`${weekly.weekStart}T12:00:00`))
+      : null;
+    const supplementRows = familySupplementReview?.rows || (weekly?.supplements.length ? weekly.supplements.map(item=>{
+      const quantity=item.mixedUnits||!item.unit
+        ? `${item.entries} ${this.locale === "zh-TW" ? "筆" : item.entries===1 ? "entry" : "entries"}`
         : `${item.amount.toLocaleString()} ${this.supplementUnitLabel(item.unit,item.amount)}`;
-      const details = weekly.supplementEntries.filter(entry=>entry.supplementId===item.supplementId).slice().sort((a,b)=>`${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)).map(entry=>`${escapeHtml(entry.date)} · ${escapeHtml(entry.time)} · ${escapeHtml(String(entry.amount??""))} ${escapeHtml(this.supplementUnitLabel(entry.unit,entry.amount))}`).join("<br>");
-      return `<details class="family-supplement-row"><summary><div><strong>${escapeHtml(this.supplementLabel(item.supplementId, item.customLabel))}</strong><span>${item.days} ${this.locale === "zh-TW" ? "天" : item.days === 1 ? "day" : "days"} · ${item.entries} ${this.locale === "zh-TW" ? "次" : item.entries === 1 ? "entry" : "entries"}</span></div><b>${escapeHtml(quantity)}</b></summary>${details?`<p class="small muted supplement-time-lines">${details}</p>`:""}</details>`;
-    }).join("") : `<div class="empty-mini">${this.locale === "zh-TW" ? "這週沒有已同步的補充品紀錄。" : "No synced supplements this week."}</div>`;
+      return `<div class="supplement-week-row"><div><strong>${escapeHtml(this.supplementLabel(item.supplementId,item.customLabel))}</strong><span>${item.days} ${this.locale === "zh-TW" ? "天" : item.days===1 ? "day" : "days"} · ${item.entries} ${this.locale === "zh-TW" ? "次" : item.entries===1 ? "entry" : "entries"}</span></div><b>${escapeHtml(quantity)}</b></div>`;
+    }).join("") : `<div class="empty-mini">${this.locale === "zh-TW" ? "這週沒有已同步的補充品紀錄。" : "No synced supplements this week."}</div>`);
 
     const memberWorkouts = this.cloudFamilyWorkouts.filter(item => item.workout.ownerId === member.uid && item.workout.visibility === "family").slice().sort((a,b)=>(b.workout.completedAt ?? b.workout.startedAt).localeCompare(a.workout.completedAt ?? a.workout.startedAt)).slice(0,6);
     const workoutRows = memberWorkouts.length ? memberWorkouts.map((item,index) => {
@@ -3389,14 +3535,15 @@ class FamilyExerciseApp {
 
     if (!this.authUser || !this.cloudMembership || this.cloudMembership.access.status !== "active") {
       const invite = this.pendingInviteCode
-        ? `<div class="card cloud-family-card"><div><div class="strong">${this.locale === "zh-TW" ? "Cloud 邀請" : "Cloud invitation"}</div><p class="small muted">${this.locale === "zh-TW" ? "此連結已開啟 Cloud 授權流程。登入必須使用邀請指定的 Google 電子郵件。" : "This link has opened the Cloud authorization flow. Sign in with the Google email named by the invitation."}</p></div>${!this.authUser ? this.googleSignInButton("Continue with Google", "使用 Google 接受邀請", true) : ""}<div class="invite-install-guide"><strong>${this.locale === "zh-TW" ? "安裝到主畫面（選填）" : "Add to Home Screen (optional)"}</strong><ol><li>${this.locale === "zh-TW" ? "先在預設瀏覽器開啟此邀請連結。" : "Open this invitation in the default browser."}</li><li>${this.locale === "zh-TW" ? "iPhone：分享 → 加入主畫面；Android／電腦：使用下方安裝按鈕或瀏覽器選單。" : "iPhone: Share → Add to Home Screen. Android/desktop: use Install below or the browser menu."}</li><li>${this.locale === "zh-TW" ? "回到 LogTogether 後，邀請會保留並帶你完成 Cloud 連線。" : "Return to LogTogether; the pending invitation remains ready for Cloud connection."}</li></ol>${this.installPrompt ? `<button class="btn small" type="button" data-action="install-app">${this.locale === "zh-TW" ? "安裝 App" : "Install app"}</button>` : ""}</div>${this.cloudMembershipError ? `<div class="small danger-text">${escapeHtml(this.cloudMembershipError)}</div>` : ""}</div>`
+        ? `<div class="card cloud-family-card"><div><div class="strong">${this.locale === "zh-TW" ? "Cloud 邀請" : "Cloud invitation"}</div><p class="small muted">${this.locale === "zh-TW" ? "此連結已開啟 Cloud 授權流程。登入必須使用邀請指定的 Google 電子郵件。" : "This link has opened the Cloud authorization flow. Sign in with the Google email named by the invitation."}</p></div>${!this.authUser ? this.googleSignInButton("Continue with Google", "使用 Google 接受邀請", true) : ""}<div class="invite-install-guide"><strong>${this.locale === "zh-TW" ? "建議先安裝到主畫面" : "Install to Home Screen first"}</strong><ol><li>${this.locale === "zh-TW" ? "先在預設瀏覽器開啟此邀請。" : "Open this invitation in the default browser."}</li><li>${this.locale === "zh-TW" ? "iPhone：分享 → 加入主畫面，然後從主畫面開啟 LogTogether。Android／電腦：可使用下方安裝按鈕或瀏覽器選單。" : "iPhone: Share → Add to Home Screen, then open LogTogether from the Home Screen. Android/desktop: use Install below or the browser menu."}</li><li>${this.locale === "zh-TW" ? "在安裝版 LogTogether 用受邀的 Google 電子郵件登入。iPhone 的主畫面 App 與 Safari 使用不同儲存空間，因此需要在安裝版再登入一次；LogTogether 會用已驗證的受邀信箱安全找回尚未接受的邀請。" : "Sign in inside the installed LogTogether app with the invited Google email. On iPhone, the Home Screen app has separate storage from Safari, so you sign in once more there; LogTogether then securely recovers the pending invitation using the verified invited email."}</li></ol>${this.installPrompt ? `<button class="btn small" type="button" data-action="install-app">${this.locale === "zh-TW" ? "安裝 App" : "Install app"}</button>` : ""}</div>${this.cloudMembershipError ? `<div class="small danger-text">${escapeHtml(this.cloudMembershipError)}</div>` : ""}</div>`
         : `<div class="card compact reconnect-cloud-card"><div><div class="strong">${this.locale === "zh-TW" ? "目前：Local" : "Current mode: Local"}</div><div class="small muted">${this.locale === "zh-TW" ? "新成員請使用邀請連結；如果這個 Google 帳號已經有 LogTogether Cloud 權限，可以直接重新連線。" : "New members should use an invitation link. If this Google account already has LogTogether Cloud access, reconnect it directly."}</div></div>${this.googleSignInButton("Connect existing Cloud account", "連線既有 Cloud 帳號")}</div>`;
       return `<section class="section"><div class="section-header"><h2 class="section-title">${this.locale === "zh-TW" ? "Cloud 與群組" : "Cloud & groups"}</h2></div><div class="family-access-stack">${localIntro}${invite}</div></section>`;
     }
 
     const membership = this.cloudMembership;
     const familyName = membership.family?.name || membership.access.familyId;
-    const ownGroup = this.groupName(membership.access.groupId);
+    const ownGroups = membership.access.groupIds ?? [membership.access.groupId];
+    const ownGroup = this.groupNames(ownGroups);
     const summary = `<div class="card family-access-summary"><div><div class="strong">${escapeHtml(familyName)}</div><div class="small muted">Cloud · ${membership.access.role === "owner" ? (this.locale === "zh-TW" ? "擁有者" : "Owner") : `${this.locale === "zh-TW" ? "群組" : "Group"}: ${escapeHtml(ownGroup)}`}</div></div><button class="btn small" data-action="refresh-family-cloud">${this.locale === "zh-TW" ? "重新整理" : "Refresh"}</button></div>`;
 
     if (membership.access.role !== "owner") {
@@ -3412,22 +3559,22 @@ class FamilyExerciseApp {
         const role = member.role === "owner" ? (this.locale === "zh-TW" ? "擁有者" : "Owner") : (this.locale === "zh-TW" ? "群組成員" : "Group member");
         return `<div class="family-access-member read-only-member"><div class="member-access-identity">${avatar}<div><div class="strong">${escapeHtml(name)}${isSelf ? ` ${this.locale === "zh-TW" ? "（你）" : "(you)"}` : ""}</div><div class="small muted">${escapeHtml(role)}</div></div></div></div>`;
       }).join("");
-      return `<section class="section"><div class="section-header"><h2 class="section-title">${this.locale === "zh-TW" ? "Cloud 與群組" : "Cloud & groups"}</h2></div><div class="family-access-stack">${summary}<div class="card compact"><div class="strong">${this.locale === "zh-TW" ? "你的群組" : "Your group"}: ${escapeHtml(ownGroup)}</div><div class="small muted">${this.locale === "zh-TW" ? "你只會看到這個群組的成員，以及擁有者選擇分享給此群組的資料。群組指派與 Cloud 權限由擁有者管理。" : "You can see only members of this group plus owner data shared with it. Group assignment and Cloud access are controlled by the owner."}</div></div><div class="card member-access-card read-only-group-members"><div class="strong">${this.locale === "zh-TW" ? "群組成員" : "Group members"}</div><div class="member-access-list">${groupMemberRows}</div></div></div></section>`;
+      return `<section class="section"><div class="section-header"><h2 class="section-title">${this.locale === "zh-TW" ? "Cloud 與群組" : "Cloud & groups"}</h2></div><div class="family-access-stack">${summary}<div class="card compact"><div class="strong">${this.locale === "zh-TW" ? "你的群組" : "Your groups"}: ${escapeHtml(ownGroup)}</div><div class="small muted">${this.locale === "zh-TW" ? "你會看到與你至少共用一個群組的成員，以及擁有者分享給其中任一群組的資料。群組指派與 Cloud 權限由擁有者管理。" : "You can see members who share at least one group with you, plus owner data shared with any of those groups. Group assignment and Cloud access are controlled by the owner."}</div></div><div class="card member-access-card read-only-group-members"><div class="strong">${this.locale === "zh-TW" ? "可見群組成員" : "Visible group members"}</div><div class="member-access-list">${groupMemberRows}</div></div></div></section>`;
     }
 
     const groupOptions = (selected: string) => membership.groups.map(group => `<option value="${escapeHtml(group.id)}" ${group.id === selected ? "selected" : ""}>${escapeHtml(group.name)}</option>`).join("");
     const groupRows = membership.groups.map(group => {
-      const assigned = membership.members.filter(member => member.role === "member" && member.groupId === group.id && member.status === "active").length;
+      const assigned = membership.members.filter(member => member.role === "member" && member.groupIds.includes(group.id) && member.status === "active").length;
       return `<form class="family-group-row" data-group-rename-form="${escapeHtml(group.id)}"><div class="group-name-editor"><input class="input compact-input" data-group-name-input name="groupName" value="${escapeHtml(group.name)}" maxlength="80" required aria-label="${this.locale === "zh-TW" ? "群組名稱" : "Group name"}"><span class="tiny muted">${assigned} ${this.locale === "zh-TW" ? "位啟用成員" : assigned === 1 ? "active member" : "active members"}</span></div>${group.id !== DEFAULT_GROUP_ID ? `<div class="group-row-actions"><button class="btn small ghost danger" type="button" data-delete-group="${escapeHtml(group.id)}">${this.locale === "zh-TW" ? "刪除" : "Delete"}</button></div>` : ""}</form>`;
     }).join("");
     const ownerSharing = `<form id="owner-sharing-form" class="owner-sharing-inline"><div class="strong">${this.locale === "zh-TW" ? "我的資料分享給哪些群組" : "Groups that can see my owner profile"}</div><div class="small muted member-access-note">${this.locale === "zh-TW" ? "只有勾選的群組能看到你的家庭個人資料與共用進度；身高與體重仍是私人資料。" : "Only selected groups can see your family profile and shared progress; height and weight remain private."}</div><div class="owner-share-groups">${membership.groups.map(group => `<label class="check-row"><input type="checkbox" name="shareGroup" value="${escapeHtml(group.id)}" ${membership.access.shareGroupIds.includes(group.id) ? "checked" : ""}><span>${escapeHtml(group.name)}</span></label>`).join("")}</div><button class="btn small" type="submit">${this.locale === "zh-TW" ? "儲存分享範圍" : "Save visibility"}</button></form>`;
-    const groups = `<details class="card settings-fold cloud-groups-fold"><summary><div><strong>${this.locale === "zh-TW" ? "群組" : "Groups"}</strong><span>${membership.groups.length} ${this.locale === "zh-TW" ? "個群組 · 點一下管理" : membership.groups.length === 1 ? "group · tap to manage" : "groups · tap to manage"}</span></div><span class="history-chevron">${icon("chevron")}</span></summary><div class="settings-fold-body"><div class="small muted member-access-note">${this.locale === "zh-TW" ? "一般成員只能看到同群組 Cloud 成員。直接編輯名稱後離開欄位即可儲存。" : "Regular members can discover only Cloud members in their own group. Edit a name directly and leave the field to save it."}</div><div class="member-access-list group-access-list">${groupRows}</div><form id="create-group-form" class="cloud-family-form"><label>${this.locale === "zh-TW" ? "新增群組" : "New group"}<input class="input" name="groupName" maxlength="80" required placeholder="${this.locale === "zh-TW" ? "例如：朋友" : "e.g. Friends"}"></label><button class="btn" type="submit">${this.locale === "zh-TW" ? "建立群組" : "Create group"}</button></form><div class="settings-inline-divider"></div>${ownerSharing}</div></details>`;
+    const groups = `<details class="card settings-fold cloud-groups-fold"><summary><div><strong>${this.locale === "zh-TW" ? "群組" : "Groups"}</strong><span>${membership.groups.length} ${this.locale === "zh-TW" ? "個群組 · 點一下管理" : membership.groups.length === 1 ? "group · tap to manage" : "groups · tap to manage"}</span></div><span class="history-chevron">${icon("chevron")}</span></summary><div class="settings-fold-body"><div class="small muted member-access-note">${this.locale === "zh-TW" ? "一般成員只能看到同群組 Cloud 成員。直接編輯名稱後離開欄位即可儲存。" : "Regular members can discover only Cloud members who overlap at least one of their groups. Edit a name directly and leave the field to save it."}</div><div class="member-access-list group-access-list">${groupRows}</div><form id="create-group-form" class="cloud-family-form"><label>${this.locale === "zh-TW" ? "新增群組" : "New group"}<input class="input" name="groupName" maxlength="80" required placeholder="${this.locale === "zh-TW" ? "例如：朋友" : "e.g. Friends"}"></label><button class="btn" type="submit">${this.locale === "zh-TW" ? "建立群組" : "Create group"}</button></form><div class="settings-inline-divider"></div>${ownerSharing}</div></details>`;
 
     const memberRows = membership.members.map(member => {
       const name = member.displayName || (member.uid === this.authUser?.uid ? (this.state.user.displayName || this.authUser.displayName || "You") : "Cloud member");
       const isSelf = member.uid === this.authUser?.uid;
       const status = member.status === "active" ? (this.locale === "zh-TW" ? "啟用" : "Active") : (this.locale === "zh-TW" ? "已撤銷" : "Revoked");
-      const groupLabel = isSelf ? (this.locale === "zh-TW" ? "擁有者" : "Owner") : this.groupName(member.groupId);
+      const groupLabel = isSelf ? (this.locale === "zh-TW" ? "擁有者" : "Owner") : this.groupNames(member.groupIds);
       const initials = name.split(/\s+/).map(part => part[0] ?? "").join("").slice(0,2).toUpperCase();
       const localPhoto = isSelf ? this.state.profile?.photoId : undefined;
       const avatar = localPhoto
@@ -3437,9 +3584,12 @@ class FamilyExerciseApp {
           : `<div class="member-access-avatar">${escapeHtml(initials)}</div>`;
       const identity = `<div class="member-access-identity">${avatar}<div><div class="strong">${escapeHtml(name)}${isSelf ? ` ${this.locale === "zh-TW" ? "（你）" : "(you)"}` : ""}</div><div class="small muted">${escapeHtml(groupLabel)}${isSelf ? "" : ` · ${escapeHtml(status)}`}</div></div></div>`;
       if (isSelf || !this.familyAccessEditing) return `<div class="family-access-member ${member.status === "revoked" ? "revoked" : ""}">${identity}</div>`;
-      return `<div class="family-access-member ${member.status === "revoked" ? "revoked" : ""}">${identity}<div class="member-admin-actions"><select class="select compact-select" data-member-group="${escapeHtml(member.uid)}" ${this.cloudActionBusy ? "disabled" : ""}>${groupOptions(member.groupId)}</select>${member.status === "active" ? `<button class="btn small ghost danger" data-member-status="revoked" data-member-uid="${escapeHtml(member.uid)}" data-member-name="${escapeHtml(name)}" ${this.cloudActionBusy ? "disabled" : ""}>${this.locale === "zh-TW" ? "撤銷 Cloud" : "Revoke Cloud"}</button>` : `<button class="btn small" data-member-status="active" data-member-uid="${escapeHtml(member.uid)}" data-member-name="${escapeHtml(name)}" ${this.cloudActionBusy ? "disabled" : ""}>${this.locale === "zh-TW" ? "恢復 Cloud" : "Restore Cloud"}</button>`}</div></div>`;
+      const memberGroups = member.groupIds.map(groupId => `<span class="member-group-chip">${escapeHtml(this.groupName(groupId))}<button type="button" data-member-remove-group="${escapeHtml(member.uid)}" data-group-id="${escapeHtml(groupId)}" ${member.groupIds.length <= 1 || this.cloudActionBusy ? "disabled" : ""} aria-label="${this.locale === "zh-TW" ? "移除此群組" : "Remove from group"}">×</button></span>`).join("");
+      const addableGroups = membership.groups.filter(group => !member.groupIds.includes(group.id));
+      const addGroup = addableGroups.length ? `<label class="member-add-group"><span class="tiny muted">${this.locale === "zh-TW" ? "加入群組" : "Add to group"}</span><select class="select compact-select" data-member-add-group="${escapeHtml(member.uid)}" ${this.cloudActionBusy ? "disabled" : ""}><option value="">${this.locale === "zh-TW" ? "選擇群組…" : "Choose group…"}</option>${addableGroups.map(group => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.name)}</option>`).join("")}</select></label>` : "";
+      return `<div class="family-access-member ${member.status === "revoked" ? "revoked" : ""}">${identity}<div class="member-admin-actions"><div class="member-group-editor"><div class="member-group-chips">${memberGroups}</div>${addGroup}</div>${member.status === "active" ? `<button class="btn small ghost danger" data-member-status="revoked" data-member-uid="${escapeHtml(member.uid)}" data-member-name="${escapeHtml(name)}" ${this.cloudActionBusy ? "disabled" : ""}>${this.locale === "zh-TW" ? "撤銷 Cloud" : "Revoke Cloud"}</button>` : `<button class="btn small" data-member-status="active" data-member-uid="${escapeHtml(member.uid)}" data-member-name="${escapeHtml(name)}" ${this.cloudActionBusy ? "disabled" : ""}>${this.locale === "zh-TW" ? "恢復 Cloud" : "Restore Cloud"}</button>`}</div></div>`;
     }).join("");
-    const memberAccessCard = `<div class="card member-access-card"><div class="member-access-heading"><div><div class="strong">${this.locale === "zh-TW" ? "Cloud 成員與權限" : "Cloud members & access"}</div><div class="small muted">${this.familyAccessEditing ? (this.locale === "zh-TW" ? "編輯模式：可變更群組或 Cloud 權限" : "Edit mode: change groups or Cloud access") : (this.locale === "zh-TW" ? "一般檢視只顯示成員、群組與狀態" : "Clean view shows member, group and status")}</div></div><button class="btn small ${this.familyAccessEditing ? "primary" : ""}" data-action="toggle-member-access-edit">${this.familyAccessEditing ? (this.locale === "zh-TW" ? "完成" : "Done") : (this.locale === "zh-TW" ? "編輯" : "Edit")}</button></div><div class="member-access-list">${memberRows}</div></div>`;
+    const memberAccessCard = `<div class="card member-access-card"><div class="member-access-heading"><div><div class="strong">${this.locale === "zh-TW" ? "Cloud 成員與權限" : "Cloud members & access"}</div><div class="small muted">${this.familyAccessEditing ? (this.locale === "zh-TW" ? "編輯模式：可變更群組或 Cloud 權限" : "Edit mode: add/remove group memberships or change Cloud access") : (this.locale === "zh-TW" ? "一般檢視只顯示成員、群組與狀態" : "Clean view shows member, group and status")}</div></div><button class="btn small ${this.familyAccessEditing ? "primary" : ""}" data-action="toggle-member-access-edit">${this.familyAccessEditing ? (this.locale === "zh-TW" ? "完成" : "Done") : (this.locale === "zh-TW" ? "編輯" : "Edit")}</button></div><div class="member-access-list">${memberRows}</div></div>`;
 
     const defaultGroup = membership.groups[0]?.id ?? DEFAULT_GROUP_ID;
     const inviteLink = this.createdInvite ? `${location.origin}${location.pathname}#invite=${encodeURIComponent(this.createdInvite.id)}` : "";
@@ -3537,7 +3687,7 @@ class FamilyExerciseApp {
     const calendarPreview=this.developerCalendarPreview === "gold"
       ? `<div class="developer-calendar-preview"><div class="tiny muted">${zh?"Gold Day 月曆樣式預覽（不改資料）":"Gold Day calendar style preview (no data changes)"}</div><div class="card calendar-card badge-month developer-mini-calendar"><div class="weekday-row">${["M","T","W","T","F","S","S"].map(day=>`<span>${day}</span>`).join("")}</div><div class="calendar-grid">${[10,11,12,13,14,15,16].map(day=>`<div class="calendar-cell history-day ${day===13?"gold-day selected":"has-activity"}"><span class="calendar-day-number">${day}</span>${day===12?'<i class="history-activity-dot"></i>':""}</div>`).join("")}</div></div></div>`
       : this.developerCalendarPreview === "water"
-        ? `<div class="developer-calendar-preview"><div class="tiny muted">${zh?"飲水月曆樣式預覽（不改資料）":"Water calendar style preview (no data changes)"}</div><div class="card calendar-card water-calendar perfect-water-month developer-mini-calendar"><div class="weekday-row">${["M","T","W","T","F","S","S"].map(day=>`<span>${day}</span>`).join("")}</div><div class="calendar-grid">${[10,11,12,13,14,15,16].map(day=>`<div class="calendar-cell water-day ${day>=12&&day<=15?"water-hit":""} ${day===13?"selected":""}"><span>${day}</span>${day===13?'<i class="water-day-dot"></i>':""}</div>`).join("")}</div></div></div>`
+        ? `<div class="developer-calendar-preview"><div class="tiny muted">${zh?"飲水月曆樣式預覽（不改資料）":"Water calendar style preview (no data changes)"}</div><div class="card calendar-card water-calendar perfect-water-month developer-mini-calendar"><div class="weekday-row">${["M","T","W","T","F","S","S"].map(day=>`<span>${day}</span>`).join("")}</div><div class="calendar-grid">${[10,11,12,13,14,15,16].map(day=>`<div class="calendar-cell water-day ${day>=12&&day<=15?"water-hit":""} ${day===13?"selected":""}"><span>${day}</span></div>`).join("")}</div></div></div>`
         : "";
     return `<details class="developer-effect-tests"><summary><div><strong>${zh?"開發者 · 視覺／事件測試（暫時）":"Developer · visual/event tests (temporary)"}</strong><span>${zh?"只有 Cloud 擁有者可見 · 不修改真實進度":"Owner only · does not change real progress"}</span></div><span class="history-chevron">${icon("chevron")}</span></summary><div class="settings-fold-body"><p class="tiny muted">${zh?"這些按鈕只在本機模擬動畫與前景事件，不花 Poke、不寫入 Gold Day／飲水／徽章紀錄，也不會傳給家人。之後可整段移除。":"These buttons simulate local animations and foreground events only. They spend no Pokes, write no Gold Day/water/badge data, and send nothing to family members. The whole harness is designed to be removed later."}</p>${reduced?`<div class="status-note warning">${zh?"此裝置已開啟 Reduce Motion；Poke 雨會刻意停用，只顯示訊息。":"Reduce Motion is enabled on this device; Poke rain is intentionally suppressed and only the message appears."}</div>`:""}<div class="developer-effect-grid"><button class="btn small" data-dev-effect="poke-one">👋 ${zh?"Poke 動畫":"Poke animation"}</button><button class="btn small" data-dev-effect="poke-five">💪 ${zh?"排入 5 個 Poke":"Queue 5 Pokes"}</button><button class="btn small" data-dev-effect="mixed-queue">🧪 ${zh?"混合事件佇列":"Mixed event queue"}</button><button class="btn small" data-dev-effect="large-family-burst">👨‍👩‍👧‍👦 ${zh?"15 人家庭壓力測試":"15-person family burst"}</button><button class="btn small" data-dev-effect="social-gold">⭐ ${zh?"家人 Gold Day 彈窗":"Family Gold Day popup"}</button><button class="btn small" data-dev-effect="social-badge">🏅 ${zh?"家人徽章彈窗":"Family badge popup"}</button><button class="btn small" data-dev-effect="local-gold">✨ ${zh?"自己的 Gold Day 動畫":"Own Gold Day animation"}</button><button class="btn small" data-dev-effect="local-water">💧 ${zh?"飲水達標動畫":"Water goal animation"}</button><button class="btn small" data-dev-effect="local-badge">🏅 ${zh?"月度徽章動畫":"Monthly badge animation"}</button><button class="btn small" data-dev-calendar-preview="gold">📅 ${zh?"Gold 月曆樣式":"Gold calendar style"}</button><button class="btn small" data-dev-calendar-preview="water">💧 ${zh?"飲水月曆樣式":"Water calendar style"}</button></div>${calendarPreview}</div></details>`;
   }
@@ -3616,7 +3766,7 @@ class FamilyExerciseApp {
     const developerOwner = this.isDeveloperOwner();
     const pokeBalanceText = developerOwner ? "∞" : `${this.pokeBalance}/7`;
     const mutedPokeGroups = this.state.notificationPreferences?.mutedPokeGroupIds ?? [];
-    const visiblePokeGroups = (this.cloudMembership?.groups ?? []).filter(group => this.cloudMembership?.access.role === "owner" ? (this.cloudMembership.access.shareGroupIds ?? [this.cloudMembership.access.groupId]).includes(group.id) : group.id === this.cloudMembership?.access.groupId);
+    const visiblePokeGroups = (this.cloudMembership?.groups ?? []).filter(group => this.cloudMembership?.access.role === "owner" ? (this.cloudMembership.access.shareGroupIds ?? [this.cloudMembership.access.groupId]).includes(group.id) : (this.cloudMembership?.access.groupIds ?? [this.cloudMembership?.access.groupId ?? DEFAULT_GROUP_ID]).includes(group.id));
     const pokeGroupMuteControls = visiblePokeGroups.length ? `<div class="poke-group-mutes"><div class="small strong">${this.locale === "zh-TW" ? "群組 Poke 靜音" : "Mute Pokes by group"}</div>${visiblePokeGroups.map(group=>`<label><input type="checkbox" data-poke-mute-group="${escapeHtml(group.id)}" ${mutedPokeGroups.includes(group.id) ? "checked" : ""}><span>${this.locale === "zh-TW" ? "靜音來自" : "Mute from"} <b>${escapeHtml(group.name)}</b></span></label>`).join("")}<div class="tiny muted">${this.locale === "zh-TW" ? "伺服器會在扣除 Poke 前檢查靜音與防洪規則。" : "The server checks mute and flood rules before a Poke is spent."}</div></div>` : "";
     const notificationReminderReset = this.familyNotificationPromptSuppressed() ? `<div class="notification-reminder-reset"><button class="btn small ghost" data-action="reset-family-notification-prompt">${this.locale === "zh-TW" ? "再次顯示家庭通知提醒" : "Show Family notification reminder again"}</button></div>` : "";
     const notificationSection = cloudReady ? `<section class="section"><div class="section-header"><h2 class="section-title">${this.locale === "zh-TW" ? "家庭通知與 Poke" : "Family notifications & Pokes"}</h2><span class="section-value">${escapeHtml(notificationStatus)}</span></div><div class="card notification-settings"><div class="notification-enable-row"><div><strong>${this.locale === "zh-TW" ? "系統通知" : "System notifications"}</strong><span>${this.locale === "zh-TW" ? "Gold Day、徽章與 Poke 預設開啟。第一次仍需要你允許瀏覽器／主畫面 App 的系統通知權限。" : "Gold Day, badge and Poke alerts default on. The browser/Home Screen app still needs your permission once on each device."}</span></div>${this.pushStatus?.subscribed ? `<button class="btn small" data-action="disable-push" ${this.pushBusy ? "disabled" : ""}>${this.locale === "zh-TW" ? "停用此裝置" : "Disable on this device"}</button>` : `<button class="btn small primary" data-action="enable-push" ${this.pushBusy || this.pushStatus?.configured === false ? "disabled" : ""}>${this.locale === "zh-TW" ? "啟用通知" : "Enable notifications"}</button>`}</div><div class="notification-pref-grid"><label><input type="checkbox" data-notification-pref="goldDays" ${notificationPrefs.goldDays ? "checked" : ""}><span><b>${this.locale === "zh-TW" ? "金色日" : "Gold Days"}</b><small>${this.locale === "zh-TW" ? "同群組成員當天第一次達成 Gold Day 時；同一天最多通知一次。" : "When a group member first earns a Gold Day that day; at most one alert per person per day."}</small></span></label><label><input type="checkbox" data-notification-pref="badges" ${notificationPrefs.badges ? "checked" : ""}><span><b>${this.locale === "zh-TW" ? "徽章" : "Badges"}</b><small>${this.locale === "zh-TW" ? "有人獲得新的月度或健行徽章時。" : "When a group member earns a new monthly or hiking badge."}</small></span></label><label><input type="checkbox" data-notification-pref="pokes" ${notificationPrefs.pokes ? "checked" : ""}><span><b>Pokes</b><small>${this.locale === "zh-TW" ? "允許可見群組成員傳送短 emoji 鼓勵；可另外靜音個人或群組。" : "Allow visible group members to send short emoji encouragement; people and groups can be muted separately."}</small></span></label></div>${pokeGroupMuteControls}${notificationReminderReset}<div class="tiny muted">${developerOwner ? (this.locale === "zh-TW" ? "開發者測試 Pokes：∞（暫時功能）。一般成員每個新 Gold Day +1，最多保留 7 個。" : "Developer test Pokes: ∞ (temporary). Normal members earn +1 per new Gold Day and can store up to 7.") : (this.locale === "zh-TW" ? `今天的新 Gold Day +1 Poke，最多 7 個。修正紀錄會收回獎勵；已花掉的會由後續獎勵抵銷。目前：${pokeBalanceText}。` : `Each new Gold Day today earns +1 Poke, up to 7 stored. Corrections revoke its token; if spent, future earnings settle it. Current balance: ${pokeBalanceText}.`)}</div></div></section>` : "";
@@ -3817,44 +3967,53 @@ class FamilyExerciseApp {
     return `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(`${definition.names.en} exercise form`)}`;
   }
 
-  private renderSupplementWeekSummary(): string {
-    const { start, end } = currentWeekBounds(new Date(`${this.selectedWaterDate}T12:00:00`));
-    const endInclusive = new Date(end.getTime() - 1);
-    const entries = (this.state.supplementHistory ?? [])
-      .filter(day => day.date >= localDateKey(start) && day.date <= localDateKey(endInclusive))
-      .flatMap(day => day.entries.map(entry => ({ date: day.date, entry })));
-    const availableIds = [...new Set(entries.map(item => item.entry.supplementId))].sort((a, b) => this.supplementLabel(a).localeCompare(this.supplementLabel(b)));
-    if (this.supplementWeekFilter !== "all" && !availableIds.includes(this.supplementWeekFilter)) this.supplementWeekFilter = "all";
-    const filtered = this.supplementWeekFilter === "all" ? entries : entries.filter(item => item.entry.supplementId === this.supplementWeekFilter);
-    const summaryMap = new Map<string, { amount: number; unit: SupplementUnit | null; customLabel?: string; mixedUnits: boolean; logs: number; days: Set<string> }>();
-    for (const item of filtered) {
-      const current = summaryMap.get(item.entry.supplementId) ?? { amount: 0, unit: item.entry.unit ?? null, ...(item.entry.customLabel ? {customLabel:item.entry.customLabel} : {}), mixedUnits: false, logs: 0, days: new Set<string>() };
+  private renderWeeklySupplementRows(
+    entries: Array<{ date:string; time:string; supplementId:string; customLabel?:string; amount?:number; unit?:SupplementUnit }>,
+    weekStart: Date,
+    filter = "all"
+  ): { rows:string; availableIds:string[]; filtered:Array<{ date:string; time:string; supplementId:string; customLabel?:string; amount?:number; unit?:SupplementUnit }>; breakdown:string } {
+    const availableIds = [...new Set(entries.map(item => item.supplementId))]
+      .sort((a,b)=>this.supplementLabel(a, entries.find(item=>item.supplementId===a)?.customLabel).localeCompare(this.supplementLabel(b, entries.find(item=>item.supplementId===b)?.customLabel)));
+    const filtered = filter === "all" ? entries : entries.filter(item=>item.supplementId===filter);
+    const summaryMap = new Map<string,{ amount:number; unit:SupplementUnit|null; customLabel?:string; mixedUnits:boolean; logs:number; days:Set<string> }>();
+    for(const entry of filtered){
+      const current=summaryMap.get(entry.supplementId) ?? { amount:0, unit:entry.unit??null, ...(entry.customLabel?{customLabel:entry.customLabel}:{}), mixedUnits:false, logs:0, days:new Set<string>() };
       current.logs += 1;
-      current.days.add(item.date);
-      current.amount += Number(item.entry.amount ?? 0);
-      if (!current.unit) current.unit = item.entry.unit ?? null;
-      else if ((item.entry.unit ?? null) !== current.unit) current.mixedUnits = true;
-      summaryMap.set(item.entry.supplementId, current);
+      current.days.add(entry.date);
+      current.amount += Number(entry.amount ?? 0);
+      if(!current.unit) current.unit=entry.unit??null;
+      else if((entry.unit??null)!==current.unit) current.mixedUnits=true;
+      summaryMap.set(entry.supplementId,current);
     }
-    const summaryRows = [...summaryMap.entries()]
-      .sort((a, b) => this.supplementLabel(a[0],a[1].customLabel).localeCompare(this.supplementLabel(b[0],b[1].customLabel)))
-      .map(([supplementId, info]) => {
-        const total = info.mixedUnits
-          ? `${info.logs} ${this.locale === "zh-TW" ? "筆紀錄" : info.logs === 1 ? "log" : "logs"}`
-          : `${Number(info.amount.toFixed(2)).toLocaleString()} ${this.supplementUnitLabel(info.unit ?? undefined, info.amount)}`;
-        const entryLines = filtered.filter(item=>item.entry.supplementId===supplementId).slice().sort((a,b)=>`${a.date}${a.entry.at}`.localeCompare(`${b.date}${b.entry.at}`)).map(item=>`${escapeHtml(item.date)} · ${escapeHtml(this.formatTime(item.entry.at))} · ${escapeHtml(String(item.entry.amount??""))} ${escapeHtml(this.supplementUnitLabel(item.entry.unit,item.entry.amount))}`).join("<br>");
-        return `<details class="supplement-review-row"><summary><strong>${escapeHtml(this.supplementLabel(supplementId,info.customLabel))}</strong><span class="supplement-days">${Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(d.getDate()+i);const key=localDateKey(d);return `<span title="${key}: ${info.days.has(key)?(this.locale==="zh-TW"?"有紀錄":"Recorded"):(this.locale==="zh-TW"?"無紀錄":"No record")}">${info.days.has(key)?"●":"○"}</span>`;}).join("")}</span></summary><div class="supplement-week-row"><div><strong>${escapeHtml(this.supplementLabel(supplementId, info.customLabel))}</strong><span>${info.days.size} ${this.locale === "zh-TW" ? "天" : info.days.size === 1 ? "day" : "days"} · ${info.logs} ${this.locale === "zh-TW" ? "次" : info.logs === 1 ? "entry" : "entries"}</span></div><b>${escapeHtml(total)}</b></div><p class="small muted supplement-time-lines">${entryLines}</p></details>`;
+    const rows=[...summaryMap.entries()]
+      .sort((a,b)=>this.supplementLabel(a[0],a[1].customLabel).localeCompare(this.supplementLabel(b[0],b[1].customLabel)))
+      .map(([supplementId,info])=>{
+        const total=info.mixedUnits || !info.unit
+          ? `${info.logs} ${this.locale === "zh-TW" ? "筆紀錄" : info.logs===1 ? "log" : "logs"}`
+          : `${Number(info.amount.toFixed(2)).toLocaleString()} ${this.supplementUnitLabel(info.unit,info.amount)}`;
+        const entryLines=filtered.filter(item=>item.supplementId===supplementId).slice()
+          .sort((a,b)=>`${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`))
+          .map(item=>`${escapeHtml(item.date)} · ${escapeHtml(item.time)} · ${escapeHtml(String(item.amount??""))} ${escapeHtml(this.supplementUnitLabel(item.unit,item.amount))}`)
+          .join("<br>");
+        return `<details class="supplement-review-row"><summary><strong>${escapeHtml(this.supplementLabel(supplementId,info.customLabel))}</strong><span class="supplement-days">${Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(d.getDate()+i);const key=localDateKey(d);return `<span title="${key}: ${info.days.has(key)?(this.locale==="zh-TW"?"有紀錄":"Recorded"):(this.locale==="zh-TW"?"無紀錄":"No record")}">${info.days.has(key)?"●":"○"}</span>`;}).join("")}</span></summary><div class="supplement-week-row"><div><strong>${escapeHtml(this.supplementLabel(supplementId,info.customLabel))}</strong><span>${info.days.size} ${this.locale === "zh-TW" ? "天" : info.days.size===1 ? "day" : "days"} · ${info.logs} ${this.locale === "zh-TW" ? "次" : info.logs===1 ? "entry" : "entries"}</span></div><b>${escapeHtml(total)}</b></div>${entryLines?`<p class="small muted supplement-time-lines">${entryLines}</p>`:""}</details>`;
       }).join("");
-    const groupedDays = filtered.reduce((map, item) => {
-      const list = map.get(item.date) ?? [];
-      list.push(item.entry);
-      map.set(item.date, list);
-      return map;
-    }, new Map<string, SupplementEntry[]>());
-    const breakdown = this.supplementWeekFilter === "all" ? "" : [...groupedDays.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([date, dayEntries]) => `<div class="supplement-week-day"><strong>${escapeHtml(new Date(`${date}T12:00:00`).toLocaleDateString(this.locale, { weekday: "short", month: "short", day: "numeric" }))}</strong><div>${dayEntries.slice().sort((a,b)=>a.at.localeCompare(b.at)).map(entry => `${escapeHtml(this.formatTime(entry.at))} · ${escapeHtml((entry.amount ?? 0).toLocaleString())} ${escapeHtml(this.supplementUnitLabel(entry.unit, entry.amount))}`).join("<br>")}</div></div>`).join("");
-    const title = this.locale === "zh-TW" ? "本週補充品總覽" : "This week’s supplement summary";
-    const label = `${start.toLocaleDateString(this.locale, { month: "short", day: "numeric" })} – ${endInclusive.toLocaleDateString(this.locale, { month: "short", day: "numeric" })}`;
-    return `<section class="section"><div class="section-header"><h2 class="section-title">${title}</h2><span class="section-value">${escapeHtml(label)}</span></div><details class="card supplement-week-card" ${this.supplementWeekOpen?"open":""}><summary><div><strong>${entries.length ? (this.locale === "zh-TW" ? "查看每週補充品" : "Review weekly supplements") : (this.locale === "zh-TW" ? "本週還沒有補充品" : "No supplements logged this week")}</strong><span>${availableIds.length} ${this.locale === "zh-TW" ? "種補充品" : availableIds.length === 1 ? "supplement" : "supplements"} · ${entries.length} ${this.locale === "zh-TW" ? "筆紀錄" : entries.length === 1 ? "entry" : "entries"}</span></div><span class="history-chevron">${icon("chevron")}</span></summary>${entries.length ? `<div class="supplement-week-body"><label class="field"><span>${this.locale === "zh-TW" ? "篩選補充品" : "Filter supplement"}</span><select class="select" id="supplement-week-filter"><option value="all" ${this.supplementWeekFilter === "all" ? "selected" : ""}>${this.locale === "zh-TW" ? "全部補充品" : "All supplements"}</option>${availableIds.map(id => { const custom=entries.find(item=>item.entry.supplementId===id)?.entry.customLabel; return `<option value="${escapeHtml(id)}" ${this.supplementWeekFilter === id ? "selected" : ""}>${escapeHtml(this.supplementLabel(id,custom))}</option>`; }).join("")}</select></label><p class="small muted">${this.locale==="zh-TW"?"週一 → 週日 · ● 有紀錄 ○ 無紀錄；不是漏服提醒。":"Mon → Sun · ● recorded ○ no record; not a missed-dose assessment."}</p><div class="supplement-week-list">${summaryRows}</div>${breakdown ? `<div class="supplement-week-breakdown"><div class="tiny muted">${this.locale === "zh-TW" ? "每日明細" : "Daily breakdown"}</div>${breakdown}</div>` : ``}</div>` : `<div class="supplement-week-empty small muted">${this.locale === "zh-TW" ? "記錄幾次補充品後，這裡會自動幫你整理每週總量與出現天數。" : "Once you log a few supplements, this panel will summarize totals and usage days for the week."}</div>`}</details></section>`;
+    const groupedDays=filtered.reduce((map,item)=>{const list=map.get(item.date)??[];list.push(item);map.set(item.date,list);return map;},new Map<string,Array<{ date:string; time:string; supplementId:string; customLabel?:string; amount?:number; unit?:SupplementUnit }>>());
+    const breakdown=filter === "all" ? "" : [...groupedDays.entries()].sort((a,b)=>b[0].localeCompare(a[0])).map(([date,dayEntries])=>`<div class="supplement-week-day"><strong>${escapeHtml(new Date(`${date}T12:00:00`).toLocaleDateString(this.locale,{weekday:"short",month:"short",day:"numeric"}))}</strong><div>${dayEntries.slice().sort((a,b)=>a.time.localeCompare(b.time)).map(entry=>`${escapeHtml(entry.time)} · ${escapeHtml((entry.amount??0).toLocaleString())} ${escapeHtml(this.supplementUnitLabel(entry.unit,entry.amount))}`).join("<br>")}</div></div>`).join("");
+    return {rows,availableIds,filtered,breakdown};
+  }
+
+  private renderSupplementWeekSummary(): string {
+    const {start,end}=currentWeekBounds(new Date(`${this.selectedWaterDate}T12:00:00`));
+    const endInclusive=new Date(end.getTime()-1);
+    const entries=(this.state.supplementHistory??[])
+      .filter(day=>day.date>=localDateKey(start)&&day.date<=localDateKey(endInclusive))
+      .flatMap(day=>day.entries.map(entry=>({date:day.date,time:this.formatTime(entry.at),supplementId:entry.supplementId,...(entry.customLabel?{customLabel:entry.customLabel}:{}),...(entry.amount!==undefined?{amount:entry.amount}:{}),...(entry.unit?{unit:entry.unit}:{} as {unit?:SupplementUnit})})));
+    const allIds=[...new Set(entries.map(item=>item.supplementId))];
+    if(this.supplementWeekFilter!=="all"&&!allIds.includes(this.supplementWeekFilter)) this.supplementWeekFilter="all";
+    const review=this.renderWeeklySupplementRows(entries,start,this.supplementWeekFilter);
+    const title=this.locale === "zh-TW" ? "本週補充品總覽" : "This week’s supplement summary";
+    const label=`${start.toLocaleDateString(this.locale,{month:"short",day:"numeric"})} – ${endInclusive.toLocaleDateString(this.locale,{month:"short",day:"numeric"})}`;
+    return `<section class="section"><div class="section-header"><h2 class="section-title">${title}</h2><span class="section-value">${escapeHtml(label)}</span></div><details class="card supplement-week-card" ${this.supplementWeekOpen?"open":""}><summary><div><strong>${entries.length?(this.locale === "zh-TW" ? "查看每週補充品" : "Review weekly supplements"):(this.locale === "zh-TW" ? "本週還沒有補充品" : "No supplements logged this week")}</strong><span>${review.availableIds.length} ${this.locale === "zh-TW" ? "種補充品" : review.availableIds.length===1 ? "supplement" : "supplements"} · ${entries.length} ${this.locale === "zh-TW" ? "筆紀錄" : entries.length===1 ? "entry" : "entries"}</span></div><span class="history-chevron">${icon("chevron")}</span></summary>${entries.length?`<div class="supplement-week-body"><label class="field"><span>${this.locale === "zh-TW" ? "篩選補充品" : "Filter supplement"}</span><select class="select" id="supplement-week-filter"><option value="all" ${this.supplementWeekFilter==="all"?"selected":""}>${this.locale === "zh-TW" ? "全部補充品" : "All supplements"}</option>${review.availableIds.map(id=>{const custom=entries.find(item=>item.supplementId===id)?.customLabel;return `<option value="${escapeHtml(id)}" ${this.supplementWeekFilter===id?"selected":""}>${escapeHtml(this.supplementLabel(id,custom))}</option>`;}).join("")}</select></label><p class="small muted">${this.locale==="zh-TW"?"週一 → 週日 · ● 有紀錄 ○ 無紀錄；不是漏服提醒。":"Mon → Sun · ● recorded ○ no record; not a missed-dose assessment."}</p><div class="supplement-week-list">${review.rows}</div>${review.breakdown?`<div class="supplement-week-breakdown"><div class="tiny muted">${this.locale === "zh-TW" ? "每日明細" : "Daily breakdown"}</div>${review.breakdown}</div>`:""}</div>`:`<div class="supplement-week-empty small muted">${this.locale === "zh-TW" ? "記錄幾次補充品後，這裡會自動幫你整理每週總量與出現天數。" : "Once you log a few supplements, this panel will summarize totals and usage days for the week."}</div>`}</details></section>`;
   }
 
   private renderExerciseOptions(): string {
@@ -3971,7 +4130,7 @@ class FamilyExerciseApp {
     const selector = routines.length ? `<label class="field routine-manager-picker"><span>${zh?"選擇已儲存訓練":"Choose a saved routine"}</span><select class="select" id="routine-manager-picker"><option value="">${zh?"請選擇要編輯或刪除的訓練":"Choose a routine to edit or delete"}</option>${routines.map(r=>`<option value="${escapeHtml(r.id)}" ${selected?.id===r.id?"selected":""}>${escapeHtml(r.name)}</option>`).join("")}</select></label>` : `<div class="empty-mini">${zh?"還沒有已儲存訓練。":"No saved routines yet."}</div>`;
     const selectedPanel = selected ? `<div class="routine-manager-selected"><div><strong>${escapeHtml(selected.name)}</strong><span>${selected.mode==="circuit"?`${selected.rounds??1} ${zh?"輪":"rounds"} · `:""}${selected.exercises.length} ${zh?"個動作":"exercises"}</span></div><div class="routine-manager-actions"><button class="btn small primary" type="button" data-action="routine-edit-selected">${zh?"編輯":"Edit"}</button><button class="btn small" type="button" data-action="routine-use-selected">${zh?"載入":"Load"}</button><button class="btn small danger" type="button" data-action="routine-delete-selected-one">${zh?"刪除":"Delete"}</button></div></div>` : "";
     const bulk = routines.length > 1 ? `<button class="btn small ghost routine-bulk-toggle" type="button" data-action="routine-toggle-bulk">${this.routineBulkMode?(zh?"關閉多選刪除":"Close multiple selection"):(zh?"多選刪除":"Select multiple to delete")}</button>${this.routineBulkMode?`<div class="routine-bulk-list">${routines.map(r=>`<label><input type="checkbox" data-routine-select="${escapeHtml(r.id)}" ${this.routineDeleteIds.has(r.id)?"checked":""}> ${escapeHtml(r.name)}</label>`).join("")}<button class="btn danger" type="button" data-action="routine-delete-selected" ${this.routineDeleteIds.size?"":"disabled"}>${zh?"刪除勾選項目":"Delete selected"}</button></div>`:""}` : "";
-    return `<details class="card routine-manager" data-fold="routine-manager" ${this.folds.has("routine-manager")?"open":""}><summary>${zh?"管理已儲存訓練":"Manage saved routines"} · ${routines.length}</summary><p class="small muted">${zh?"先選擇一個範本；編輯器只會在你按下編輯後顯示。完成紀錄不會被更改。":"Choose a template first. The full editor appears only after you select Edit; completed records stay unchanged."}</p>${selector}${selectedPanel}${bulk}${draft?`<form id="routine-edit-form" class="routine-editor"><h3>${zh?"編輯範本":"Edit template"}</h3><label class="field"><span class="label">${zh?"名稱":"Name"}</span><input class="input" id="routine-edit-name" required maxlength="100" value="${escapeHtml(draft.name)}"></label>${draft.mode==="circuit"?`<label class="field"><span class="label">${zh?"輪數":"Rounds"}</span><input class="input" id="routine-edit-rounds" type="number" min="1" max="10" step="1" required value="${draft.rounds??3}"></label>`:""}${draft.exercises.map((ex,ei)=>`<fieldset class="routine-editor-exercise" draggable="true" data-routine-drag="${ei}"><legend><span class="drag-handle" data-routine-drag-handle="${ei}" role="button" tabindex="0" aria-label="${zh?"拖曳排序":"Drag to reorder"}">↕</span> ${ei+1}. ${escapeHtml(exerciseById(ex.exerciseId)?.names[this.locale]??ex.exerciseId)}</legend><div class="routine-order"><button class="btn small" type="button" data-routine-move="${ei}" data-direction="-1" ${ei===0?"disabled":""}>↑ ${zh?"上移":"Up"}</button><button class="btn small" type="button" data-routine-move="${ei}" data-direction="1" ${ei===draft.exercises.length-1?"disabled":""}>↓ ${zh?"下移":"Down"}</button><button class="btn small danger" type="button" data-routine-remove-exercise="${ei}">${zh?"移除動作":"Remove exercise"}</button></div><label class="field"><span class="label">${zh?"組間休息秒數":"Rest between sets (seconds)"}</span><input class="input" type="number" min="0" max="3600" step="1" required value="${ex.restSec}" data-routine-rest="${ei}"></label>${(draft.mode==="circuit"?ex.sets.slice(0,1):ex.sets).map((set,si)=>`<div class="routine-editor-set"><strong>${draft.mode==="circuit"?(zh?"每輪":"Each round"):`${zh?"組":"Set"} ${si+1}`}</strong><div class="routine-fields">${fields(set,ex,ei,si)}</div>${draft.mode!=="circuit"&&ex.sets.length>1?`<button class="btn small danger" type="button" data-routine-remove-set="${ei}" data-rs="${si}">${zh?"移除這組":"Remove set"}</button>`:""}</div>`).join("")}${draft.mode!=="circuit"?`<button class="btn" type="button" data-routine-add-set="${ei}">${zh?"新增一組":"Add set"}</button>`:""}</fieldset>`).join("")}<label class="field"><span class="label">${zh?"新增動作":"Add exercise"}</span><select class="select" id="routine-add-exercise">${routineExerciseOptions}</select></label><button class="btn" type="button" data-action="routine-add-exercise">${zh?"新增動作":"Add exercise"}</button><div class="routine-editor-actions"><button class="btn primary" type="submit">${zh?"儲存變更":"Save changes"}</button><button class="btn" type="button" data-action="routine-edit-cancel">${zh?"取消編輯":"Cancel editing"}</button></div></form>`:""}</details>`;
+    return `<details class="card routine-manager" data-fold="routine-manager" ${this.folds.has("routine-manager")?"open":""}><summary>${zh?"管理已儲存訓練":"Manage saved routines"} · ${routines.length}</summary><p class="small muted">${zh?"先選擇一個範本；編輯器只會在你按下編輯後顯示。完成紀錄不會被更改。":"Choose a template first. The full editor appears only after you select Edit; completed records stay unchanged."}</p>${selector}${selectedPanel}${bulk}${draft?`<form id="routine-edit-form" class="routine-editor"><h3>${zh?"編輯範本":"Edit template"}</h3><label class="field"><span class="label">${zh?"名稱":"Name"}</span><input class="input" id="routine-edit-name" required maxlength="100" value="${escapeHtml(draft.name)}"></label>${draft.mode==="circuit"?`<label class="field"><span class="label">${zh?"輪數":"Rounds"}</span><input class="input" id="routine-edit-rounds" type="number" min="1" max="10" step="1" required value="${draft.rounds??3}"></label>`:""}${draft.exercises.map((ex,ei)=>`<fieldset class="routine-editor-exercise" data-routine-drag="${ei}"><legend><span class="drag-handle" data-routine-drag-handle="${ei}" role="button" tabindex="0" aria-label="${zh?"拖曳排序":"Drag to reorder"}">⠿</span> ${ei+1}. ${escapeHtml(exerciseById(ex.exerciseId)?.names[this.locale]??ex.exerciseId)}</legend><div class="routine-order">${this.movePositionMenu("routine-position",ei,draft.exercises.length)}<button class="btn small danger" type="button" data-routine-remove-exercise="${ei}">${zh?"移除動作":"Remove exercise"}</button></div><label class="field"><span class="label">${zh?"組間休息秒數":"Rest between sets (seconds)"}</span><input class="input" type="number" min="0" max="3600" step="1" required value="${ex.restSec}" data-routine-rest="${ei}"></label>${(draft.mode==="circuit"?ex.sets.slice(0,1):ex.sets).map((set,si)=>`<div class="routine-editor-set"><strong>${draft.mode==="circuit"?(zh?"每輪":"Each round"):`${zh?"組":"Set"} ${si+1}`}</strong><div class="routine-fields">${fields(set,ex,ei,si)}</div>${draft.mode!=="circuit"&&ex.sets.length>1?`<button class="btn small danger" type="button" data-routine-remove-set="${ei}" data-rs="${si}">${zh?"移除這組":"Remove set"}</button>`:""}</div>`).join("")}${draft.mode!=="circuit"?`<button class="btn" type="button" data-routine-add-set="${ei}">${zh?"新增一組":"Add set"}</button>`:""}</fieldset>`).join("")}<label class="field"><span class="label">${zh?"新增動作":"Add exercise"}</span><select class="select" id="routine-add-exercise">${routineExerciseOptions}</select></label><button class="btn" type="button" data-action="routine-add-exercise">${zh?"新增動作":"Add exercise"}</button><div class="routine-editor-actions"><button class="btn primary" type="submit">${zh?"儲存變更":"Save changes"}</button><button class="btn" type="button" data-action="routine-edit-cancel">${zh?"取消編輯":"Cancel editing"}</button></div></form>`:""}</details>`;
   }
 
   private bindRoutineManager(): void {
@@ -3993,34 +4152,8 @@ class FamilyExerciseApp {
     root.querySelector<HTMLInputElement>("#routine-edit-rounds")?.addEventListener("input",event=>{const el=event.target as HTMLInputElement;if(el.checkValidity())draft.rounds=Number(el.value);});
     root.querySelectorAll<HTMLInputElement>("[data-routine-rest]").forEach(el=>el.addEventListener("input",()=>{if(el.checkValidity())draft.exercises[Number(el.dataset.routineRest)]!.restSec=Number(el.value);}));
     root.querySelectorAll<HTMLInputElement|HTMLSelectElement>("[data-routine-field]").forEach(el=>el.addEventListener("change",()=>{if(!el.checkValidity())return;const set=draft.exercises[Number(el.dataset.re)]!.sets[Number(el.dataset.rs)]!;const key=el.dataset.routineField!;if(!el.value){delete (set as any)[key];return;}(set as any)[key]=["side","setType"].includes(key)?el.value:Number(el.value);}));
-    root.querySelectorAll<HTMLElement>("[data-routine-move]").forEach(el=>el.addEventListener("click",()=>{const i=Number(el.dataset.routineMove),j=i+Number(el.dataset.direction);if(j<0||j>=draft.exercises.length)return;[draft.exercises[i],draft.exercises[j]]=[draft.exercises[j]!,draft.exercises[i]!];this.render();}));
-    let routineDragFrom = -1;
-    root.querySelectorAll<HTMLElement>("[data-routine-drag]").forEach(card => {
-      card.addEventListener("dragstart", () => { routineDragFrom = Number(card.dataset.routineDrag); card.classList.add("dragging"); });
-      card.addEventListener("dragend", () => card.classList.remove("dragging"));
-      card.addEventListener("dragover", event => event.preventDefault());
-      card.addEventListener("drop", event => {
-        event.preventDefault();
-        const to = Number(card.dataset.routineDrag);
-        if (routineDragFrom < 0 || to < 0 || routineDragFrom === to) return;
-        const [moved] = draft.exercises.splice(routineDragFrom,1);
-        if (moved) draft.exercises.splice(to,0,moved);
-        this.render();
-      });
-    });
-    root.querySelectorAll<HTMLElement>("[data-routine-drag-handle]").forEach(handle => {
-      handle.addEventListener("pointerdown", event => { routineDragFrom = Number(handle.dataset.routineDragHandle); handle.setPointerCapture(event.pointerId); });
-      handle.addEventListener("pointerup", event => {
-        const target = document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>("[data-routine-drag]");
-        const to = Number(target?.dataset.routineDrag ?? -1);
-        if (routineDragFrom >= 0 && to >= 0 && routineDragFrom !== to) {
-          const [moved] = draft.exercises.splice(routineDragFrom,1);
-          if (moved) draft.exercises.splice(to,0,moved);
-          this.render();
-        }
-        routineDragFrom = -1;
-      });
-    });
+    root.querySelectorAll<HTMLSelectElement>("[data-routine-position]").forEach(select=>select.addEventListener("change",()=>{const from=Number(select.dataset.routinePosition),to=Number(select.value);if(!Number.isInteger(from)||!Number.isInteger(to)||from===to)return;const [moved]=draft.exercises.splice(from,1);if(moved)draft.exercises.splice(to,0,moved);this.render();}));
+    this.bindSmoothReorder("[data-routine-drag]","[data-routine-drag-handle]",(from,to)=>{const [moved]=draft.exercises.splice(from,1);if(moved)draft.exercises.splice(to,0,moved);this.render();});
     root.querySelectorAll<HTMLElement>("[data-routine-remove-exercise]").forEach(el=>el.addEventListener("click",()=>{draft.exercises.splice(Number(el.dataset.routineRemoveExercise),1);this.render();}));
     root.querySelectorAll<HTMLElement>("[data-routine-remove-set]").forEach(el=>el.addEventListener("click",()=>{draft.exercises[Number(el.dataset.routineRemoveSet)]!.sets.splice(Number(el.dataset.rs),1);this.render();}));
     root.querySelectorAll<HTMLElement>("[data-routine-add-set]").forEach(el=>el.addEventListener("click",()=>{const ex=draft.exercises[Number(el.dataset.routineAddSet)]!;ex.sets.push(structuredClone(ex.sets.at(-1)??{reps:8}));this.render();}));
@@ -4180,8 +4313,8 @@ class FamilyExerciseApp {
     const addControl = this.profileRepeats(profile)
       ? `<button class="btn small touch" data-add-set="${exerciseIndex}">${icon("plus")} ${profile === "rounds" ? (this.locale === "zh-TW" ? "新增回合" : "Add round") : escapeHtml(this.text("addSet"))}</button>`
       : "";
-    return `<section class="exercise-card regular-workout-card ${profile !== "sets" ? "session-exercise-card" : ""}" ${canReorder ? `draggable="true" data-workout-exercise-drag="${exerciseIndex}"` : ""}>
-      <div class="exercise-head"><div class="exercise-head-main"><div class="row-start">${canReorder ? `<button type="button" class="drag-handle-button" data-workout-exercise-drag-handle="${exerciseIndex}" aria-label="${this.locale === "zh-TW" ? "拖曳排序" : "Drag to reorder"}">↕</button>` : ""}<div class="exercise-name">${exerciseIndex+1}. ${escapeHtml(name)}</div>${!editingExisting ? `<button class="icon-btn subtle-danger exercise-remove-compact" data-remove-exercise="${exerciseIndex}" aria-label="${escapeHtml(this.text("removeExercise"))}" title="${escapeHtml(this.text("removeExercise"))}">${icon("trash")}</button>` : ""}</div>${definition ? `<div class="exercise-meta-line">${escapeHtml(this.exercisePreviewHint(definition))} · <a class="exercise-example-link" href="${escapeHtml(this.exerciseImageSearchUrl(definition))}" target="_blank" rel="noopener noreferrer">${this.locale === "zh-TW" ? "圖片示範" : "Image examples"}</a></div>${focus ? `<div class="exercise-focus-line">${escapeHtml(focus)}</div>` : ""}` : ""}${restControl}${exercise.startedAt ? `<div class="tiny muted">${this.formatTime(exercise.startedAt)}${exercise.completedAt ? `–${this.formatTime(exercise.completedAt)}` : ""}</div>` : ""}</div>${editingExisting ? `<button class="icon-btn danger" data-remove-exercise="${exerciseIndex}" aria-label="${escapeHtml(this.text("removeExercise"))}" title="${escapeHtml(this.text("removeExercise"))}">${icon("trash")}</button>` : ""}</div>
+    return `<section class="exercise-card regular-workout-card ${profile !== "sets" ? "session-exercise-card" : ""}" ${canReorder ? `data-workout-exercise-drag="${exerciseIndex}"` : ""}>
+      <div class="exercise-head"><div class="exercise-head-main"><div class="row-start">${canReorder ? `<button type="button" class="drag-handle-button" data-workout-exercise-drag-handle="${exerciseIndex}" aria-label="${this.locale === "zh-TW" ? "拖曳排序" : "Drag to reorder"}">⠿</button>` : ""}<div class="exercise-name">${exerciseIndex+1}. ${escapeHtml(name)}</div>${canReorder ? this.movePositionMenu("workout-position",exerciseIndex,workout.exercises.length) : ""}${!editingExisting ? `<button class="icon-btn subtle-danger exercise-remove-compact" data-remove-exercise="${exerciseIndex}" aria-label="${escapeHtml(this.text("removeExercise"))}" title="${escapeHtml(this.text("removeExercise"))}">${icon("trash")}</button>` : ""}</div>${definition ? `<div class="exercise-meta-line">${escapeHtml(this.exercisePreviewHint(definition))} · <a class="exercise-example-link" href="${escapeHtml(this.exerciseImageSearchUrl(definition))}" target="_blank" rel="noopener noreferrer">${this.locale === "zh-TW" ? "圖片示範" : "Image examples"}</a></div>${focus ? `<div class="exercise-focus-line">${escapeHtml(focus)}</div>` : ""}` : ""}${restControl}${exercise.startedAt ? `<div class="tiny muted">${this.formatTime(exercise.startedAt)}${exercise.completedAt ? `–${this.formatTime(exercise.completedAt)}` : ""}</div>` : ""}</div>${editingExisting ? `<button class="icon-btn danger" data-remove-exercise="${exerciseIndex}" aria-label="${escapeHtml(this.text("removeExercise"))}" title="${escapeHtml(this.text("removeExercise"))}">${icon("trash")}</button>` : ""}</div>
       <div class="set-list regular-set-list">${exercise.sets.map((set, setIndex) => this.renderSetRow(workout, definition, exerciseIndex, setIndex, set)).join("")}</div>
       ${allCompleted ? `<div class="effort-prompt"><div><strong>${escapeHtml(this.text("effortPrompt"))}</strong><span>${this.locale === "zh-TW" ? "1 = 很輕鬆，5 = 非常吃力" : "1 = very easy, 5 = very hard"}</span></div><div class="effort-scale">${difficultyLabels.map((label,index)=>`<button class="effort-btn ${exercise.difficulty === index+1 ? "selected" : ""}" data-difficulty="${index+1}" data-exercise-index="${exerciseIndex}" title="${escapeHtml(label)}">${index+1}</button>`).join("")}</div>${exercise.difficulty ? `<div class="small muted">${escapeHtml(difficultyLabels[exercise.difficulty-1] ?? "")}</div>` : ""}</div>` : ""}
       ${addControl ? `<div class="exercise-actions">${addControl}</div>` : ""}
@@ -4249,7 +4382,7 @@ class FamilyExerciseApp {
     const definition=exerciseById(this.manualActivityExerciseId) ?? exerciseById("run")!;
     const profile=exerciseScienceLoggingProfile(definition);
     const metrics=exerciseSessionMetricFlags(definition);
-    const starter=exerciseStarterDefault(definition);
+    const laterality=exerciseLaterality(definition);
     const focus=this.exerciseFocusText(definition);
     const isSetBased=["sets","skill_sets","dynamic_mobility"].includes(profile);
     const isTimedSets=["isometric_sets","balance_hold","static_stretch","rounds","skill_drill","water_skill","conditioning_intervals","sprint_intervals"].includes(profile);
@@ -4257,16 +4390,30 @@ class FamilyExerciseApp {
     const isSession=["cardio_session","swim_session","yoga_flow","mobility_session"].includes(profile);
     let fields="";
     if(isSetBased){
-      fields=`<div class="form-two"><label class="field"><span>${zh?"組數":"Sets"}</span><input class="input" name="sets" type="number" min="1" max="20" step="1" value="${starter.sets}"></label><label class="field"><span>${profile==="dynamic_mobility"?(zh?"每側次數":"Reps / side"):(zh?"每組次數":"Reps / set")}</span><input class="input" name="reps" type="number" min="1" max="500" step="1" value="${starter.reps ?? 8}"></label></div>${definition.type==="weight_reps"?`<label class="field"><span>${zh?"重量（kg）":"Load (kg)"}</span><input class="input" name="weight" type="number" min="0" max="1000" step="0.5" value="0"></label>`:""}`;
+      fields=`<div class="form-two"><label class="field"><span>${zh?"實際組數":"Actual sets"}</span><input class="input" name="sets" type="number" min="1" max="30" step="1" inputmode="numeric" placeholder="—" required></label><label class="field"><span>${profile==="dynamic_mobility"?(zh?"實際每側次數":"Actual reps / side"):(zh?"實際每組次數":"Actual reps / set")}</span><input class="input" name="reps" type="number" min="1" max="500" step="1" inputmode="numeric" placeholder="—" required></label></div>${definition.type==="weight_reps"?`<label class="field"><span>${zh?"實際重量（kg，可選）":"Actual load (kg, optional)"}</span><input class="input" name="weight" type="number" min="0" max="1000" step="0.5" placeholder="—"></label>`:""}`;
     } else if(isCarry){
-      fields=`<div class="form-three"><label class="field"><span>${zh?"趟數":"Carries"}</span><input class="input" name="sets" type="number" min="1" max="20" value="${starter.sets}"></label><label class="field"><span>${zh?"每趟距離（m）":"Distance / carry (m)"}</span><input class="input" name="distanceM" type="number" min="0" step="1" value="${Math.round((starter.distanceKm??0.03)*1000)}"></label><label class="field"><span>${zh?"每手重量（kg）":"Load / hand (kg)"}</span><input class="input" name="loadPerHand" type="number" min="0" step="0.5"></label></div>`;
+      fields=`<div class="form-three"><label class="field"><span>${zh?"實際趟數":"Actual carries"}</span><input class="input" name="sets" type="number" min="1" max="30" step="1" inputmode="numeric" placeholder="—" required></label><label class="field"><span>${zh?"每趟距離（m）":"Distance / carry (m)"}</span><input class="input" name="distanceM" type="number" min="0" step="1" placeholder="—"></label><label class="field"><span>${zh?"每趟時間（秒）":"Seconds / carry"}</span><input class="input" name="duration" type="number" min="0" max="7200" step="1" placeholder="—"></label></div><label class="field"><span>${zh?"每手重量（kg，可選）":"Load / hand (kg, optional)"}</span><input class="input" name="loadPerHand" type="number" min="0" step="0.5" placeholder="—"></label>`;
     } else if(isTimedSets){
-      fields=`<div class="form-two"><label class="field"><span>${zh?"回合／組數":"Rounds / sets"}</span><input class="input" name="sets" type="number" min="1" max="30" value="${starter.sets}"></label><label class="field"><span>${zh?"每次時間（秒）":"Seconds each"}</span><input class="input" name="duration" type="number" min="1" max="7200" step="1" value="${starter.durationSec ?? 30}"></label></div>${metrics.distance?`<label class="field"><span>${zh?"每次距離（m，可選）":"Distance each (m, optional)"}</span><input class="input" name="distanceM" type="number" min="0" step="1"></label>`:""}${["conditioning_intervals","skill_drill"].includes(profile)?`<label class="field"><span>${zh?"成功次數（可選）":"Successful reps (optional)"}</span><input class="input" name="reps" type="number" min="0" step="1"></label>`:""}`;
+      fields=`<div class="form-two"><label class="field"><span>${zh?"實際回合／組數":"Actual rounds / sets"}</span><input class="input" name="sets" type="number" min="1" max="30" step="1" inputmode="numeric" placeholder="—" required></label><label class="field"><span>${zh?"每次時間（秒）":"Seconds each"}</span><input class="input" name="duration" type="number" min="0" max="7200" step="1" placeholder="—"></label></div>${metrics.distance?`<label class="field"><span>${zh?"每次距離（m，可選）":"Distance each (m, optional)"}</span><input class="input" name="distanceM" type="number" min="0" step="1" placeholder="—"></label>`:""}${["conditioning_intervals","skill_drill","water_skill"].includes(profile)?`<label class="field"><span>${zh?"每次成功次數（可選）":"Successful reps each (optional)"}</span><input class="input" name="reps" type="number" min="0" step="1" placeholder="—"></label>`:""}`;
     } else {
-      fields=`<div class="form-two"><label class="field"><span>${zh?"活動時間（分鐘）":"Active duration (min)"}</span><input class="input" name="minutes" type="number" min="1" max="1440" value="${starter.minutes ?? 20}"></label>${metrics.distance?`<label class="field"><span>${zh?"距離（km）":"Distance (km)"}</span><input class="input" name="distance" type="number" min="0" max="1000" step="0.01"></label>`:"<div></div>"}</div>${metrics.laps?`<label class="field"><span>${zh?"趟數（可選）":"Laps (optional)"}</span><input class="input" name="laps" type="number" min="0" step="1"></label>`:""}${metrics.cadence?`<label class="field"><span>${zh?"踏頻 rpm（可選）":"Cadence rpm (optional)"}</span><input class="input" name="cadence" type="number" min="0" step="1"></label>`:""}${metrics.strokeRate?`<label class="field"><span>${zh?"划頻 spm（可選）":"Stroke rate spm (optional)"}</span><input class="input" name="strokeRate" type="number" min="0" step="1"></label>`:""}${metrics.vertical?`<label class="field"><span>${zh?"爬升（m，可選）":"Vertical gain (m, optional)"}</span><input class="input" name="vertical" type="number" min="0" step="1"></label>`:""}${metrics.packWeight?`<label class="field"><span>${zh?"背包重量（kg，可選）":"Pack weight (kg, optional)"}</span><input class="input" name="packWeight" type="number" min="0" step="0.5"></label>`:""}`;
+      fields=`<div class="form-two"><label class="field"><span>${zh?"實際活動時間（分鐘）":"Actual active duration (min)"}</span><input class="input" name="minutes" type="number" min="0.1" max="1440" step="0.1" placeholder="—" required></label>${metrics.distance?`<label class="field"><span>${zh?"實際距離（km，可選）":"Actual distance (km, optional)"}</span><input class="input" name="distance" type="number" min="0" max="1000" step="0.01" placeholder="—"></label>`:"<div></div>"}</div>`;
     }
-    const cardioNote=exerciseMovementPattern(definition)==="cardio" ? `<div class="activity-intensity-note tiny muted">${zh?"有氧強度提示：中等強度通常可以說話但不容易唱歌；較高強度通常只能說幾個字就要換氣。強度用於熱量與健康指引估算，不會因填更高就獲得額外遊戲點數。":"Cardio intensity guide: moderate activity usually lets you talk but not sing; vigorous activity usually limits you to a few words before a breath. Intensity informs calorie/health estimates and never grants bonus game points."}</div>` : "";
-    return `<div class="activity-log-header"><button class="btn ghost touch" data-action="back-home">${icon("back")} ${zh?"返回":"Back"}</button></div><h1 class="page-title">${zh?"補登已完成運動":"Log completed activity"}</h1><p class="page-subtitle">${zh?"這裡記錄已完成的運動。準備開始？請回首頁選「開始運動」。":"Record a finished activity here. About to exercise? Choose Start workout on Home."}</p><form id="manual-activity-form" class="card activity-log-card"><label class="field"><span>${zh?"活動":"Activity"}</span><select class="select" id="manual-activity-picker" name="exerciseId">${this.manualActivityOptions()}</select></label><div class="exercise-preview-card compact-preview"><div><span>${escapeHtml(this.exercisePreviewHint(definition))}</span>${focus?`<small class="exercise-focus-preview">${escapeHtml(focus)}</small>`:""}</div><a class="exercise-example-link" href="${escapeHtml(this.exerciseImageSearchUrl(definition))}" target="_blank" rel="noopener noreferrer">${zh?"查看圖片示範":"View image examples"}</a></div><div class="form-two"><label class="field"><span>${zh?"日期與結束時間":"Date & end time"}</span><input class="input date-input" name="activityAt" type="datetime-local" max="${this.toDateTimeLocal(new Date().toISOString())}" value="${this.toDateTimeLocal(new Date().toISOString())}"></label><label class="field"><span>${zh?"體感／強度":"Effort / intensity"}</span><select class="select" name="difficulty"><option value="1">1 · ${zh?"非常輕鬆":"Very easy"}</option><option value="2">2 · ${zh?"輕鬆":"Easy"}</option><option value="3" selected>3 · ${zh?"中等":"Moderate"}</option><option value="4">4 · ${zh?"較高／劇烈":"Hard / vigorous"}</option><option value="5">5 · ${zh?"非常吃力":"Very hard"}</option></select></label></div>${cardioNote}${fields}<label class="field"><span>${zh?"備註（可選）":"Notes (optional)"}</span><textarea class="input" name="notes" rows="3" maxlength="500" placeholder="${zh?"例如：Apple Watch、Garmin、Strava 或泳池紀錄":"e.g. Apple Watch, Garmin, Strava or pool record"}"></textarea></label><div class="activity-log-science tiny muted">${zh?"記錄後會進入一般 History，並由原本的動作 metadata 決定有氧、力量、活動度、肌群與 Gold Day 貢獻；不能直接輸入遊戲分數。":"The saved record enters normal History. Existing exercise metadata determines cardio, strength, mobility, training distribution and Gold Day credit; game points cannot be entered manually."}</div><button class="btn primary full touch" type="submit">${zh?"儲存活動":"Save activity"}</button></form>`;
+    const sideField=laterality === "none" ? "" : `<label class="field"><span>${zh?"側別":"Side"}</span><select class="select" name="side"><option value="both">${zh?"雙側／交替":"Both / alternating"}</option><option value="left">${zh?"左":"Left"}</option><option value="right">${zh?"右":"Right"}</option></select></label>`;
+    const trackerFields=[
+      metrics.speed ? `<label class="field"><span>${zh?"平均速度 km/h":"Average speed km/h"}</span><input class="input" name="speed" type="number" min="0" step="0.1" placeholder="—"></label>` : "",
+      metrics.incline ? `<label class="field"><span>${zh?"坡度 %":"Incline %"}</span><input class="input" name="incline" type="number" min="0" max="100" step="0.1" placeholder="—"></label>` : "",
+      metrics.resistance ? `<label class="field"><span>${zh?"器材阻力等級":"Machine resistance level"}</span><input class="input" name="resistance" type="number" min="0" step="0.1" placeholder="—"></label>` : "",
+      metrics.laps ? `<label class="field"><span>${zh?"趟／圈數":"Laps / lengths"}</span><input class="input" name="laps" type="number" min="0" step="1" placeholder="—"></label>` : "",
+      metrics.cadence ? `<label class="field"><span>${zh?"踏頻 rpm":"Cadence rpm"}</span><input class="input" name="cadence" type="number" min="0" step="1" placeholder="—"></label>` : "",
+      metrics.strokeRate ? `<label class="field"><span>${zh?"划頻 spm":"Stroke rate spm"}</span><input class="input" name="strokeRate" type="number" min="0" step="1" placeholder="—"></label>` : "",
+      metrics.pace500 ? `<label class="field"><span>${zh?"500 m 配速（秒）":"500 m split (sec)"}</span><input class="input" name="pace500" type="number" min="0" step="1" placeholder="—"></label>` : "",
+      metrics.vertical ? `<label class="field"><span>${zh?"總爬升（m）":"Vertical gain (m)"}</span><input class="input" name="vertical" type="number" min="0" step="1" placeholder="—"></label>` : "",
+      metrics.packWeight ? `<label class="field"><span>${zh?"背包重量（kg）":"Pack weight (kg)"}</span><input class="input" name="packWeight" type="number" min="0" step="0.5" placeholder="—"></label>` : ""
+    ].filter(Boolean).join("");
+    const optionalSession=!isSession ? `<label class="field"><span>${zh?"整次運動時間（分鐘，可選）":"Whole-session duration (min, optional)"}</span><input class="input" name="sessionMinutes" type="number" min="0" max="1440" step="0.1" placeholder="${zh?"不知道就留白":"Leave blank if unknown"}"></label>` : "";
+    const details=(optionalSession||trackerFields||!isSession) ? `<details class="activity-extra-metrics"><summary>${zh?"更多紀錄／裝置數據（選填）":"More tracker / device metrics (optional)"}</summary><div class="activity-extra-grid">${optionalSession}${!isSession?`<label class="field"><span>${zh?"實際組間／回合休息（秒，可選）":"Actual rest between sets / rounds (sec, optional)"}</span><input class="input" name="restSec" type="number" min="0" max="1800" step="1" placeholder="—"></label>`:""}${trackerFields}</div><p class="tiny muted">${zh?"只填你真的記錄到的數據。這些欄位不會因數字較高而增加遊戲點數。":"Enter only metrics you actually recorded. Higher values here never grant extra game points."}</p></details>` : "";
+    const cardioNote=exerciseMovementPattern(definition)==="cardio" ? `<div class="activity-intensity-note tiny muted">${zh?"有氧強度提示：中等強度通常可以說話但不容易唱歌；較高強度通常只能說幾個字就要換氣。若不知道強度就保持「未記錄」；未知強度不會被當成中等強度健康指引分鐘。":"Cardio intensity guide: moderate activity usually lets you talk but not sing; vigorous activity usually limits you to a few words before a breath. Leave effort as Not recorded if unknown; unknown effort is not counted as moderate guideline minutes."}</div>` : "";
+    return `<div class="activity-log-header"><button class="btn ghost touch" data-action="back-home">${icon("back")} ${zh?"返回":"Back"}</button></div><h1 class="page-title">${zh?"補登已完成運動":"Log completed activity"}</h1><p class="page-subtitle">${zh?"這裡記錄已完成的實際數據，所以不會把「起始建議」預填成你做過的內容。準備開始？請回首頁選「開始運動」。":"This records what you actually completed, so starter targets are never prefilled as historical facts. About to exercise? Choose Start workout on Home."}</p><form id="manual-activity-form" class="card activity-log-card"><label class="field"><span>${zh?"活動":"Activity"}</span><select class="select" id="manual-activity-picker" name="exerciseId">${this.manualActivityOptions()}</select></label><div class="exercise-preview-card compact-preview"><div><span>${escapeHtml(this.exercisePreviewHint(definition))}</span>${focus?`<small class="exercise-focus-preview">${escapeHtml(focus)}</small>`:""}</div><a class="exercise-example-link" href="${escapeHtml(this.exerciseImageSearchUrl(definition))}" target="_blank" rel="noopener noreferrer">${zh?"查看圖片示範":"View image examples"}</a></div><div class="form-two"><label class="field"><span>${zh?"日期與結束時間":"Date & end time"}</span><input class="input date-input" name="activityAt" type="datetime-local" max="${this.toDateTimeLocal(new Date().toISOString())}" value="${this.toDateTimeLocal(new Date().toISOString())}"></label><label class="field"><span>${zh?"體感／強度":"Effort / intensity"}</span><select class="select" name="difficulty"><option value="" selected>${zh?"未記錄":"Not recorded"}</option><option value="1">1 · ${zh?"非常輕鬆":"Very easy"}</option><option value="2">2 · ${zh?"輕鬆":"Easy"}</option><option value="3">3 · ${zh?"中等":"Moderate"}</option><option value="4">4 · ${zh?"較高／劇烈":"Hard / vigorous"}</option><option value="5">5 · ${zh?"非常吃力":"Very hard"}</option></select></label></div>${cardioNote}${fields}${sideField}${details}<label class="field"><span>${zh?"備註（可選）":"Notes (optional)"}</span><textarea class="input" name="notes" rows="3" maxlength="500" placeholder="${zh?"例如：Apple Watch、Garmin、Strava 或泳池紀錄":"e.g. Apple Watch, Garmin, Strava or pool record"}"></textarea></label><div class="activity-log-science tiny muted">${zh?"記錄後會進入一般 History，並由原本的動作 metadata 決定有氧、力量、活動度、肌群與 Gold Day 貢獻；不能直接輸入遊戲分數。":"The saved record enters normal History. Existing exercise metadata determines cardio, strength, mobility, training distribution and Gold Day credit; game points cannot be entered manually."}</div><button class="btn primary full touch" type="submit">${zh?"儲存活動":"Save activity"}</button></form>`;
   }
 
   private saveManualActivity(form: HTMLFormElement): void {
@@ -4276,43 +4423,63 @@ class FamilyExerciseApp {
     const definition=exerciseById(exerciseId); if(!definition || definition.id==="hiking_cardio") return;
     const profile=exerciseScienceLoggingProfile(definition);
     const metrics=exerciseSessionMetricFlags(definition);
+    const laterality=exerciseLaterality(definition);
     const atRaw=String(data.get("activityAt") ?? "");
     const endDate=atRaw ? new Date(atRaw) : new Date();
     if(!Number.isFinite(endDate.getTime()) || endDate.getTime()>Date.now()+60000){ this.toast(this.locale==="zh-TW"?"活動結束時間不能在未來":"Activity end time cannot be in the future"); return; }
-    const difficulty=clamp(Math.round(Number(data.get("difficulty") ?? 3) || 3),1,5) as 1|2|3|4|5;
-    const setsCount=clamp(Math.round(Number(data.get("sets") ?? 1) || 1),1,30);
-    const reps=Math.max(0,Math.round(Number(data.get("reps") ?? 0) || 0));
-    const weight=Math.max(0,Number(data.get("weight") ?? 0) || 0);
-    const durationEach=Math.max(0,Math.round(Number(data.get("duration") ?? 0) || 0));
-    const minutes=Math.max(0,Number(data.get("minutes") ?? 0) || 0);
-    const distanceKm=Math.max(0,Number(data.get("distance") ?? 0) || 0);
-    const distanceEachM=Math.max(0,Number(data.get("distanceM") ?? 0) || 0);
-    const loadPerHand=Math.max(0,Number(data.get("loadPerHand") ?? 0) || 0);
+    const difficultyRaw=String(data.get("difficulty")??"").trim();
+    const difficulty=difficultyRaw ? clamp(Math.round(Number(difficultyRaw)||0),1,5) as 1|2|3|4|5 : undefined;
+    const setsRaw=String(data.get("sets")??"").trim();
+    const setsCount=setsRaw ? clamp(Math.round(Number(setsRaw)||0),1,30) : 0;
+    const reps=Math.max(0,Math.round(Number(data.get("reps")??0)||0));
+    const weight=Math.max(0,Number(data.get("weight")??0)||0);
+    const durationEach=Math.max(0,Math.round(Number(data.get("duration")??0)||0));
+    const minutes=Math.max(0,Number(data.get("minutes")??0)||0);
+    const sessionMinutes=Math.max(0,Number(data.get("sessionMinutes")??0)||0);
+    const distanceKm=Math.max(0,Number(data.get("distance")??0)||0);
+    const distanceEachM=Math.max(0,Number(data.get("distanceM")??0)||0);
+    const loadPerHand=Math.max(0,Number(data.get("loadPerHand")??0)||0);
+    const restSec=Math.max(0,Math.round(Number(data.get("restSec")??0)||0));
+    const sideRaw=String(data.get("side")??"");
+    const side=laterality!=="none" && ["left","right","both"].includes(sideRaw) ? sideRaw as "left"|"right"|"both" : undefined;
+    const advanced:Partial<SetEntry>={};
+    const assignPositive=(enabled:boolean,key:keyof SetEntry,name:string,round=false)=>{const value=Number(data.get(name)??0);if(enabled&&Number.isFinite(value)&&value>0) (advanced as Record<string,unknown>)[key]=round?Math.round(value):value;};
+    assignPositive(metrics.speed,"speedKph","speed");
+    assignPositive(metrics.incline,"inclinePct","incline");
+    assignPositive(metrics.resistance,"resistanceLevel","resistance");
+    assignPositive(metrics.laps,"laps","laps",true);
+    assignPositive(metrics.cadence,"cadenceRpm","cadence",true);
+    assignPositive(metrics.strokeRate,"strokeRateSpm","strokeRate",true);
+    assignPositive(metrics.pace500,"pace500Sec","pace500",true);
+    assignPositive(metrics.vertical,"verticalGainM","vertical");
+    assignPositive(metrics.packWeight,"packWeightKg","packWeight");
     const sets:SetEntry[]=[];
     const timedSession=["cardio_session","swim_session","yoga_flow","mobility_session"].includes(profile);
+    const withCommon=(set:SetEntry,index:number):SetEntry=>({...set,...(side?{side}:{}),...(index===0?advanced:{})});
     if(timedSession){
-      if(minutes<=0){ this.toast(this.locale==="zh-TW"?"請輸入活動時間":"Enter an activity duration"); return; }
-      sets.push({id:uid("set"),completed:true,setType:"normal",durationSec:Math.round(minutes*60),...(metrics.distance&&distanceKm>0?{distanceKm}:{}),...(metrics.laps&&Number(data.get("laps")??0)>0?{laps:Math.round(Number(data.get("laps")))}:{}),...(metrics.cadence&&Number(data.get("cadence")??0)>0?{cadenceRpm:Math.round(Number(data.get("cadence")))}:{}),...(metrics.strokeRate&&Number(data.get("strokeRate")??0)>0?{strokeRateSpm:Math.round(Number(data.get("strokeRate")))}:{}),...(metrics.vertical&&Number(data.get("vertical")??0)>0?{verticalGainM:Number(data.get("vertical"))}:{}),...(metrics.packWeight&&Number(data.get("packWeight")??0)>0?{packWeightKg:Number(data.get("packWeight"))}:{})});
+      if(minutes<=0){ this.toast(this.locale==="zh-TW"?"請輸入實際活動時間":"Enter the actual activity duration"); return; }
+      sets.push(withCommon({id:uid("set"),completed:true,setType:"normal",durationSec:Math.round(minutes*60),...(metrics.distance&&distanceKm>0?{distanceKm}:{})},0));
     } else if(profile==="loaded_carry"){
-      for(let i=0;i<setsCount;i++) sets.push({id:uid("set"),completed:true,setType:"normal",...(distanceEachM>0?{distanceKm:distanceEachM/1000}:{}),...(loadPerHand>0?{loadPerHandKg:loadPerHand}:{}),...(durationEach>0?{durationSec:durationEach}:{})});
+      if(!setsCount){ this.toast(this.locale==="zh-TW"?"請輸入實際趟數":"Enter the actual number of carries"); return; }
+      if(distanceEachM<=0&&durationEach<=0){ this.toast(this.locale==="zh-TW"?"請輸入每趟距離或時間":"Enter distance or time for each carry"); return; }
+      for(let i=0;i<setsCount;i++) sets.push(withCommon({id:uid("set"),completed:true,setType:"normal",...(distanceEachM>0?{distanceKm:distanceEachM/1000}:{}),...(loadPerHand>0?{loadPerHandKg:loadPerHand}:{}),...(durationEach>0?{durationSec:durationEach}:{}),...(restSec>0&&i<setsCount-1?{restAfterSec:restSec}:{})},i));
     } else if(["isometric_sets","balance_hold","static_stretch","rounds","skill_drill","water_skill","conditioning_intervals","sprint_intervals"].includes(profile)){
-      if(durationEach<=0 && reps<=0){ this.toast(this.locale==="zh-TW"?"請輸入時間或次數":"Enter time or repetitions"); return; }
-      for(let i=0;i<setsCount;i++) sets.push({id:uid("set"),completed:true,setType:"normal",...(durationEach>0?{durationSec:durationEach}:{}),...(reps>0?{reps}:{}),...(distanceEachM>0?{distanceKm:distanceEachM/1000}:{})});
+      if(!setsCount){ this.toast(this.locale==="zh-TW"?"請輸入實際回合／組數":"Enter the actual rounds / sets"); return; }
+      if(durationEach<=0&&reps<=0){ this.toast(this.locale==="zh-TW"?"請輸入實際時間或次數":"Enter actual time or repetitions"); return; }
+      for(let i=0;i<setsCount;i++) sets.push(withCommon({id:uid("set"),completed:true,setType:"normal",...(durationEach>0?{durationSec:durationEach}:{}),...(reps>0?{reps}:{}),...(distanceEachM>0?{distanceKm:distanceEachM/1000}:{}),...(restSec>0&&i<setsCount-1?{restAfterSec:restSec}:{})},i));
     } else {
-      if(reps<=0){ this.toast(this.locale==="zh-TW"?"請輸入每組次數":"Enter repetitions per set"); return; }
-      for(let i=0;i<setsCount;i++) sets.push({id:uid("set"),completed:true,setType:"normal",reps,...(definition.type==="weight_reps"?{weightKg:weight}:{})});
+      if(!setsCount||reps<=0){ this.toast(this.locale==="zh-TW"?"請輸入實際組數與每組次數":"Enter actual sets and repetitions"); return; }
+      for(let i=0;i<setsCount;i++) sets.push(withCommon({id:uid("set"),completed:true,setType:"normal",reps,...(definition.type==="weight_reps"&&weight>0?{weightKg:weight}:{}),...(restSec>0&&i<setsCount-1?{restAfterSec:restSec}:{})},i));
     }
-    const activeSeconds=sets.reduce((sum,set)=>sum+Math.max(0,set.durationSec ?? ((set.reps??0)*3)),0);
-    const restSeconds=Math.max(0,(sets.length-1)*(exerciseStarterDefault(definition).restSec||0));
-    const totalSeconds=Math.max(60, timedSession ? Math.round(minutes*60) : activeSeconds+restSeconds);
     const completedAt=endDate;
-    const startedAt=new Date(completedAt.getTime()-totalSeconds*1000);
+    const knownSessionMinutes=timedSession ? minutes : sessionMinutes;
+    const startedAt=knownSessionMinutes>0 ? new Date(completedAt.getTime()-knownSessionMinutes*60000) : completedAt;
     const workout=createBlankWorkout(this.state);
     workout.recordingSource="manual";
     workout.routineName=`${this.locale==="zh-TW"?"補登":"Logged"}: ${definition.names[this.locale]}`;
     workout.startedAt=startedAt.toISOString(); workout.completedAt=completedAt.toISOString();
     workout.notes=String(data.get("notes")??"").trim().slice(0,500);
-    workout.exercises=[{id:uid("exercise"),exerciseId:definition.id,restSec:exerciseStarterDefault(definition).restSec,notes:"",sets,difficulty,recordingProfile:profile,recordingProfileVersion:2,targetRepMin:exerciseStarterDefault(definition).repMin,targetRepMax:exerciseStarterDefault(definition).repMax}];
+    workout.exercises=[{id:uid("exercise"),exerciseId:definition.id,restSec,notes:"",sets,...(difficulty?{difficulty}:{}),recordingProfile:profile,recordingProfileVersion:2}];
     workout.estimatedCalories=estimateWorkoutCalories(workout,this.currentWeightKg());
     this.markFamilyDate(workout.completedAt); this.state.workouts.push(workout);
     this.persist(); void this.pushWorkoutToCloud(workout);
@@ -4843,18 +5010,8 @@ class FamilyExerciseApp {
     }));
     root.querySelector('[data-action="add-circuit-row"]')?.addEventListener("click", () => { captureCircuitDraft(); const definition=exerciseById("push_up"); const starter=definition ? exerciseStarterDefault(definition) : undefined; this.circuitDraftRows.push({ exerciseId:"push_up", reps:starter?.reps ?? 10, weightKg:0, targetWorkSec:0, durationSec:starter?.durationSec ?? 30, distanceKm:starter?.distanceKm ?? 0, minutes:starter?.minutes ?? 20, restSec:starter?.restSec ?? 60 }); this.render(); });
     root.querySelectorAll<HTMLElement>("[data-circuit-remove]").forEach(node => node.addEventListener("click", () => { captureCircuitDraft(); const index=Number(node.dataset.circuitRemove); if (this.circuitDraftRows.length>1 && Number.isInteger(index)) this.circuitDraftRows.splice(index,1); this.render(); }));
-    root.querySelectorAll<HTMLElement>("[data-circuit-move]").forEach(node => node.addEventListener("click", () => { captureCircuitDraft(); const i=Number(node.dataset.circuitMove),j=i+Number(node.dataset.direction);if(j<0||j>=this.circuitDraftRows.length)return;[this.circuitDraftRows[i],this.circuitDraftRows[j]]=[this.circuitDraftRows[j]!,this.circuitDraftRows[i]!];this.render(); }));
-    let circuitDragFrom = -1;
-    root.querySelectorAll<HTMLElement>("[data-circuit-drag]").forEach(card => {
-      card.addEventListener("dragstart", () => { circuitDragFrom=Number(card.dataset.circuitDrag); card.classList.add("dragging"); });
-      card.addEventListener("dragend", () => card.classList.remove("dragging"));
-      card.addEventListener("dragover", event => event.preventDefault());
-      card.addEventListener("drop", event => { event.preventDefault(); captureCircuitDraft(); const to=Number(card.dataset.circuitDrag); if(circuitDragFrom<0||to<0||circuitDragFrom===to)return; const [moved]=this.circuitDraftRows.splice(circuitDragFrom,1);if(moved)this.circuitDraftRows.splice(to,0,moved);this.render(); });
-    });
-    root.querySelectorAll<HTMLElement>("[data-circuit-drag-handle]").forEach(handle => {
-      handle.addEventListener("pointerdown", event => { circuitDragFrom=Number(handle.dataset.circuitDragHandle);handle.setPointerCapture(event.pointerId); });
-      handle.addEventListener("pointerup", event => { const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>("[data-circuit-drag]");const to=Number(target?.dataset.circuitDrag??-1);captureCircuitDraft();if(circuitDragFrom>=0&&to>=0&&circuitDragFrom!==to){const [moved]=this.circuitDraftRows.splice(circuitDragFrom,1);if(moved)this.circuitDraftRows.splice(to,0,moved);this.render();}circuitDragFrom=-1; });
-    });
+    root.querySelectorAll<HTMLSelectElement>("[data-circuit-position]").forEach(select => select.addEventListener("change", () => { captureCircuitDraft(); const from=Number(select.dataset.circuitPosition),to=Number(select.value);if(!Number.isInteger(from)||!Number.isInteger(to)||from===to)return;const [moved]=this.circuitDraftRows.splice(from,1);if(moved)this.circuitDraftRows.splice(to,0,moved);this.render(); }));
+    this.bindSmoothReorder("[data-circuit-drag]","[data-circuit-drag-handle]",(from,to)=>{const [moved]=this.circuitDraftRows.splice(from,1);if(moved)this.circuitDraftRows.splice(to,0,moved);this.render();},captureCircuitDraft);
     circuitForm?.addEventListener("submit", event => {
       event.preventDefault();
       captureCircuitDraft();
@@ -5284,16 +5441,33 @@ class FamilyExerciseApp {
       finally { this.cloudActionBusy = false; this.render(); }
     });
 
-    root.querySelectorAll<HTMLSelectElement>("[data-member-group]").forEach(select => select.addEventListener("change", async () => {
+    root.querySelectorAll<HTMLSelectElement>("[data-member-add-group]").forEach(select => select.addEventListener("change", async () => {
       if (!this.authUser || !this.cloudMembership || this.cloudActionBusy) return;
-      const uid = select.dataset.memberGroup ?? "";
+      const uid = select.dataset.memberAddGroup ?? "";
       const groupId = select.value;
-      if (!uid || !groupId) return;
+      const member = this.cloudMembership.members.find(item => item.uid === uid);
+      if (!uid || !groupId || !member || member.groupIds.includes(groupId)) return;
       this.cloudActionBusy = true; this.render();
       try {
-        this.cloudMembership = await setFamilyMemberGroup(this.authUser, this.cloudMembership, uid, groupId);
+        this.cloudMembership = await setFamilyMemberGroups(this.authUser, this.cloudMembership, uid, [...member.groupIds, groupId], member.groupId);
         this.cloudMembershipError = null;
-        this.toast(this.locale === "zh-TW" ? "成員群組已更新" : "Member group updated");
+        this.toast(this.locale === "zh-TW" ? "成員群組已更新" : "Member groups updated");
+      } catch (error) { this.toast(this.cloudErrorMessage(error)); }
+      finally { this.cloudActionBusy = false; this.render(); }
+    }));
+    root.querySelectorAll<HTMLButtonElement>("[data-member-remove-group]").forEach(button => button.addEventListener("click", async () => {
+      if (!this.authUser || !this.cloudMembership || this.cloudActionBusy) return;
+      const uid = button.dataset.memberRemoveGroup ?? "";
+      const groupId = button.dataset.groupId ?? "";
+      const member = this.cloudMembership.members.find(item => item.uid === uid);
+      if (!member || member.groupIds.length <= 1 || !member.groupIds.includes(groupId)) return;
+      const next = member.groupIds.filter(value => value !== groupId);
+      const primary = member.groupId === groupId ? next[0]! : member.groupId;
+      this.cloudActionBusy = true; this.render();
+      try {
+        this.cloudMembership = await setFamilyMemberGroups(this.authUser, this.cloudMembership, uid, next, primary);
+        this.cloudMembershipError = null;
+        this.toast(this.locale === "zh-TW" ? "成員群組已更新" : "Member groups updated");
       } catch (error) { this.toast(this.cloudErrorMessage(error)); }
       finally { this.cloudActionBusy = false; this.render(); }
     }));
@@ -5666,17 +5840,8 @@ class FamilyExerciseApp {
       if (this.workoutComposerMode === "workout") this.folds.add("exercise");
       this.render();
     });
-    let workoutDragFrom = -1;
-    root.querySelectorAll<HTMLElement>("[data-workout-exercise-drag]").forEach(card => {
-      card.addEventListener("dragstart", () => { workoutDragFrom=Number(card.dataset.workoutExerciseDrag);card.classList.add("dragging"); });
-      card.addEventListener("dragend", () => card.classList.remove("dragging"));
-      card.addEventListener("dragover", event => event.preventDefault());
-      card.addEventListener("drop", event => { event.preventDefault();const to=Number(card.dataset.workoutExerciseDrag);if(workoutDragFrom<0||to<0||workoutDragFrom===to)return;const [moved]=workout.exercises.splice(workoutDragFrom,1);if(moved)workout.exercises.splice(to,0,moved);this.persist();this.render(); });
-    });
-    root.querySelectorAll<HTMLElement>("[data-workout-exercise-drag-handle]").forEach(handle => {
-      handle.addEventListener("pointerdown", event => { workoutDragFrom=Number(handle.dataset.workoutExerciseDragHandle);handle.setPointerCapture(event.pointerId); });
-      handle.addEventListener("pointerup", event => {const target=document.elementFromPoint(event.clientX,event.clientY)?.closest<HTMLElement>("[data-workout-exercise-drag]");const to=Number(target?.dataset.workoutExerciseDrag??-1);if(workoutDragFrom>=0&&to>=0&&workoutDragFrom!==to){const [moved]=workout.exercises.splice(workoutDragFrom,1);if(moved)workout.exercises.splice(to,0,moved);this.persist();this.render();}workoutDragFrom=-1;});
-    });
+    root.querySelectorAll<HTMLSelectElement>("[data-workout-position]").forEach(select=>select.addEventListener("change",()=>{const from=Number(select.dataset.workoutPosition),to=Number(select.value);if(!Number.isInteger(from)||!Number.isInteger(to)||from===to)return;const [moved]=workout.exercises.splice(from,1);if(moved)workout.exercises.splice(to,0,moved);this.persist();this.render();}));
+    this.bindSmoothReorder("[data-workout-exercise-drag]","[data-workout-exercise-drag-handle]",(from,to)=>{const [moved]=workout.exercises.splice(from,1);if(moved)workout.exercises.splice(to,0,moved);this.persist();this.render();});
 
     root.querySelector('[data-action="end-rest"]')?.addEventListener("click", () => { this.endRest(true); this.render(); });
 

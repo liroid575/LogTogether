@@ -22,19 +22,34 @@ const RECIPIENT_FLOOD_MAX = 5;
 function groupId(data) {
   return typeof data?.groupId === "string" && data.groupId ? data.groupId : "default";
 }
+function groupIds(data) {
+  const values = Array.isArray(data?.groupIds)
+    ? data.groupIds.filter(value => typeof value === "string" && value)
+    : [groupId(data)];
+  return [...new Set(values.length ? values : [groupId(data)])].slice(0,20);
+}
 function shareGroups(data) {
   if (Array.isArray(data?.shareGroupIds) && data.shareGroupIds.length) {
-    return data.shareGroupIds.filter(value => typeof value === "string" && value);
+    return [...new Set(data.shareGroupIds.filter(value => typeof value === "string" && value))].slice(0,20);
   }
   return [groupId(data)];
+}
+function intersects(left, right) {
+  const rightSet = new Set(right);
+  return left.some(value => rightSet.has(value));
+}
+function visibleGroups(actor, viewer) {
+  if (!actor || !viewer || actor.status !== "active" || viewer.status !== "active" || actor.familyId !== viewer.familyId) return [];
+  if (actor.role === "owner") return groupIds(viewer).filter(value => shareGroups(actor).includes(value));
+  if (viewer.role === "owner") return groupIds(actor).filter(value => shareGroups(viewer).includes(value));
+  const viewerGroups = new Set(groupIds(viewer));
+  return groupIds(actor).filter(value => viewerGroups.has(value));
 }
 function canSeeActor(actor, viewer) {
   if (!actor || !viewer || actor.status !== "active" || viewer.status !== "active") return false;
   if (actor.familyId !== viewer.familyId) return false;
   if (actor.uid === viewer.uid) return true;
-  if (actor.role === "owner") return shareGroups(actor).includes(groupId(viewer));
-  if (viewer.role === "owner") return shareGroups(viewer).includes(groupId(actor));
-  return groupId(actor) === groupId(viewer);
+  return visibleGroups(actor,viewer).length > 0;
 }
 function notificationPrefs(data) {
   const value = data?.notificationPreferences ?? {};
@@ -283,8 +298,9 @@ exports.sendPoke = onCall({region:REGION,secrets:PUSH_SECRETS,enforceAppCheck:tr
   if (!canSeeActor(sender,recipient) || !canSeeActor(recipient,sender)) throw new HttpsError("permission-denied","Pokes stay within your visible family group.");
 
   const recipientPrefs = notificationPrefs(recipientUserSnap.exists ? recipientUserSnap.data() : {});
-  const senderGroup = groupId(sender);
-  if (!recipientPrefs.pokes || recipientPrefs.mutedPokeUids.includes(senderUid) || recipientPrefs.mutedPokeGroupIds.includes(senderGroup)) {
+  const sharedGroups = visibleGroups(sender,recipient);
+  const allSharedGroupsMuted = sharedGroups.length > 0 && sharedGroups.every(group => recipientPrefs.mutedPokeGroupIds.includes(group));
+  if (!recipientPrefs.pokes || recipientPrefs.mutedPokeUids.includes(senderUid) || allSharedGroupsMuted) {
     await recordUsage(familyId,{pokesBlocked:1});
     throw new HttpsError("failed-precondition","Poke unavailable right now.");
   }

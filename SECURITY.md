@@ -52,6 +52,10 @@ Shared resources are constrained by:
 
 Revoked members lose access to family-visible resources.
 
+In v0.15, an ordinary member may belong to more than one group. Authorization uses intersection of the member group sets rather than treating family membership as blanket access. The legacy `groupId` remains as a primary/backward-compatible value while `groupIds` carries the complete membership set. Only the owner may change another member's groups, and the mirrored access/member documents must be updated together.
+
+Pending invite recovery for an installed PWA is restricted to the signed-in user's verified email, pending status, and a bounded query. The opaque invite code remains the direct path; the email recovery path exists only so an iPhone Home Screen app does not depend on Safari-local storage crossing into the standalone PWA container.
+
 ### Sensitive data is separated
 
 Records with different privacy requirements are kept separate rather than combined into one broadly readable document.

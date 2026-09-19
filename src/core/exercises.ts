@@ -266,7 +266,7 @@ const STATIC_STRETCH_IDS = new Set([
 const UNILATERAL_EXERCISE_IDS = new Set([
   "single_arm_row","bulgarian_split_squat","walking_lunge","pistol_squat","shrimp_squat",
   "standing_hip_abduction","low_step_up","supported_single_leg_stand","side_plank","bird_dog",
-  "hip_flexor_stretch","hamstring_stretch","quad_stretch","calf_stretch","pigeon_pose","thoracic_rotation"
+  "hip_flexor_stretch","hamstring_stretch","quad_stretch","calf_stretch","pigeon_pose","warrior_one","warrior_two","thoracic_rotation"
 ]);
 
 export type ExerciseLaterality = "none" | "optional" | "per_side";
@@ -274,7 +274,7 @@ export type ExerciseLaterality = "none" | "optional" | "per_side";
 /** One shared laterality rule for live workouts, circuits, routines and manual logs. */
 export function exerciseLaterality(exercise: ExerciseDefinition): ExerciseLaterality {
   if (UNILATERAL_EXERCISE_IDS.has(exercise.id)) return "per_side";
-  if (["downward_dog","child_pose","cobra_pose","warrior_one","warrior_two","sun_salutation"].includes(exercise.id)) return "none";
+  if (["downward_dog","child_pose","cobra_pose","sun_salutation"].includes(exercise.id)) return "none";
   return "none";
 }
 const DYNAMIC_MOBILITY_IDS = new Set(["shoulder_mobility","cat_cow","thoracic_rotation","ankle_mobility"]);
