@@ -1,3 +1,4 @@
+- Hotfix 7: fixes the stale service-worker cache regression test, makes touch reordering immediate with pointer capture and explicit iOS text-selection suppression, replaces the oversized cloned-card drag ghost with a compact movement label, and moves smaller drag/fallback controls to the top-right of circuit and saved-routine edit cards. Service-worker cache: `logtogether-shell-v0.15.0-push-ui-hotfix7`.
 - Notification hotfix 4: notification onboarding/status no longer waits indefinitely for `navigator.serviceWorker.ready`; push setup re-registers/waits for the service worker with a bounded timeout and starts the permission/subscription request directly from the user gesture, improving iPhone/iPad Home Screen reliability. Service-worker cache: `logtogether-shell-v0.15.0-notify-hotfix4`.
 ## v0.15.0 — Reliability, Groups & Recording Polish
 

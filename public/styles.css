@@ -3211,6 +3211,9 @@ html.rest-alert-flash #rest-timer { animation:rest-complete-pulse .9s ease-out; 
 .routine-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
 .routine-fields .field, .routine-fields input, .routine-fields select { min-width:0; width:100%; }
 .routine-order,.routine-editor-actions { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+.routine-editor-exercise-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.routine-editor-exercise-head > strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.routine-editor-exercise-head .routine-order { flex:0 0 auto; flex-wrap:nowrap; margin:0; align-items:center; justify-content:flex-end; }
 .routine-editor-set { padding:12px 0; border-bottom:1px solid var(--border); }
 .routine-editor .btn { min-height:44px; }
 
@@ -3273,11 +3276,10 @@ html.rest-alert-flash #rest-timer { animation:rest-complete-pulse .9s ease-out; 
 .mission-personal-choices legend { color:var(--muted); font-size:11px; margin-bottom:6px; }
 .mission-personal-choices label { display:flex; align-items:center; gap:8px; min-height:42px; padding:8px 10px; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); }
 .mission-personal-choices input { width:20px; height:20px; }
-.drag-handle-button,.drag-handle { min-width:42px; min-height:42px; display:inline-grid; place-items:center; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); color:var(--muted); cursor:grab; touch-action:none; }
-.drag-handle-button:active,.drag-handle:active { cursor:grabbing; }
+.drag-handle-button,.drag-handle { width:32px; height:32px; min-width:32px; min-height:32px; padding:0; display:inline-grid; place-items:center; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); color:var(--muted); cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; -webkit-tap-highlight-color:transparent; font-size:16px; line-height:1; }
+.drag-handle-button:active,.drag-handle:active,.drag-handle-active { cursor:grabbing; border-color:var(--accent); color:var(--text); }
 .routine-editor-exercise.dragging,.circuit-row.dragging,.regular-workout-card.dragging { opacity:.55; border-color:var(--accent); }
-.routine-editor-exercise legend { display:flex; align-items:center; gap:8px; font-weight:750; }
-.circuit-order-buttons { display:flex; align-items:center; gap:6px; margin-left:auto; }
+.circuit-order-buttons { display:flex; align-items:center; justify-content:flex-end; gap:6px; margin-left:auto; flex-wrap:nowrap; }
 .circuit-row-header { align-items:center; }
 .invite-install-guide { margin-top:12px; padding:12px; border:1px solid var(--border); border-radius:12px; background:var(--surface-2); }
 .invite-install-guide ol { margin:8px 0 10px; padding-left:20px; color:var(--muted); font-size:12px; line-height:1.55; }
@@ -3292,13 +3294,15 @@ html.rest-alert-flash #rest-timer { animation:rest-complete-pulse .9s ease-out; 
 .member-group-chip button:disabled { opacity:.4; cursor:not-allowed; }
 .member-add-group { max-width:100%; }
 .reorder-position-menu { position:relative; display:inline-block; }
-.reorder-position-menu > summary { width:42px; height:42px; display:grid; place-items:center; list-style:none; border:1px solid var(--border); border-radius:10px; background:var(--surface-2); color:var(--muted); cursor:pointer; font-size:20px; line-height:1; }
+.reorder-position-menu > summary { width:32px; height:32px; display:grid; place-items:center; list-style:none; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); color:var(--muted); cursor:pointer; font-size:17px; line-height:1; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
 .reorder-position-menu > summary::-webkit-details-marker { display:none; }
 .reorder-position-menu[open] > summary { border-color:var(--accent); color:var(--text); }
 .reorder-position-menu .select { position:absolute; z-index:24; right:0; top:calc(100% + 6px); width:min(220px,70vw); box-shadow:0 12px 30px rgba(0,0,0,.22); background:var(--surface); }
-.smooth-reorder-source { opacity:.22; border-color:var(--accent) !important; }
-.smooth-reorder-ghost { position:fixed !important; z-index:1000 !important; margin:0 !important; pointer-events:none !important; opacity:.96; transform:scale(1.015); box-shadow:0 18px 45px rgba(0,0,0,.28); border-color:var(--accent) !important; background:var(--surface) !important; transition:none !important; }
-.reorder-active { user-select:none; }
+.smooth-reorder-source { opacity:.20; border-color:var(--accent) !important; }
+.smooth-reorder-ghost { position:fixed !important; z-index:1000 !important; margin:0 !important; min-height:48px; padding:10px 12px; display:flex; align-items:center; gap:10px; pointer-events:none !important; opacity:.98; border:1px solid var(--accent); border-radius:12px; box-shadow:0 16px 38px rgba(0,0,0,.30); background:var(--surface) !important; color:var(--text); transition:none !important; overflow:hidden; }
+.smooth-reorder-ghost strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; }
+.smooth-reorder-ghost-grip { flex:0 0 auto; color:var(--accent); font-size:18px; line-height:1; }
+.reorder-active,.reorder-active * { user-select:none !important; -webkit-user-select:none !important; -webkit-touch-callout:none !important; }
 @media (prefers-reduced-motion: reduce) {
   .routine-editor-exercise,.circuit-row,.regular-workout-card { transition:none !important; }
 }
@@ -3312,3 +3316,10 @@ html.rest-alert-flash #rest-timer { animation:rest-complete-pulse .9s ease-out; 
 .activity-extra-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; padding:0 12px 10px; }
 .activity-extra-metrics > p { margin:0; padding:0 12px 12px; }
 @media (max-width:560px) { .activity-extra-grid { grid-template-columns:1fr; } }
+
+/* v0.15.0 drag polish: compact top-right controls and no iOS text-selection during pointer reorder */
+.compact-reorder-handle { flex:0 0 32px; }
+@media (max-width:520px) {
+  .routine-editor-exercise-head { align-items:flex-start; }
+  .circuit-order-buttons { gap:5px; }
+}

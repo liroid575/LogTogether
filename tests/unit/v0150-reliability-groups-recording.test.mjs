@@ -56,11 +56,17 @@ await test("reordering removes permanent Up Down buttons while keeping drag and 
   const [main, styles] = await Promise.all([text("src/main.ts"), text("public/styles.css")]);
   assert.match(main, /bindSmoothReorder/);
   assert.match(main, /pointerdown/);
+  assert.match(main, /setPointerCapture\(event\.pointerId\)/);
+  assert.match(main, /document\.getSelection\(\)\?\.removeAllRanges\(\)/);
+  assert.match(main, /routine-editor-exercise-head/);
+  assert.match(main, /compact-reorder-handle/);
   assert.match(main, /Move position menu/);
   assert.match(main, /Position \$\{position\+1\}/);
   assert.doesNotMatch(main, />↑ Up</);
   assert.doesNotMatch(main, />↓ Down</);
   assert.match(styles, /\.smooth-reorder-ghost/);
+  assert.match(styles, /-webkit-user-select:none/);
+  assert.match(styles, /\.compact-reorder-handle/);
   assert.match(styles, /prefers-reduced-motion/);
 });
 
@@ -183,6 +189,6 @@ await test("v0.15 version and service-worker cache are explicit", async () => {
   const [pkg, main, sw, verify] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js"), text("scripts/verify-live-deployment.mjs")]);
   assert.equal(JSON.parse(pkg).version, "0.15.0");
   assert.match(main, /APP_VERSION = "0\.15\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.15\.0-push-hotfix6/);
+  assert.match(sw, /logtogether-shell-v0\.15\.0-push-ui-hotfix7/);
   assert.match(verify, /v0\.15\.0/);
 });
