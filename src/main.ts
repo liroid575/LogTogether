@@ -342,6 +342,7 @@ class FamilyExerciseApp {
   private pokeBusy = false;
   private backendDiagnostics: BackendDiagnostics | null = null;
   private backendDiagnosticsBusy = false;
+  private activeReorderCleanup: (()=>void) | null = null;
 
   constructor(initialState: AppState, initialScope: string, offlineAccount: ReturnType<typeof loadRememberedOfflineAccount>, inviteCode: string | null) {
     this.state = initialState;
@@ -1725,6 +1726,19 @@ class FamilyExerciseApp {
     commit: (from: number, to: number) => void,
     beforeStart?: () => void
   ): void {
+    // A render or route change during an iOS drag can detach the original handle
+    // before WebKit delivers pointerup. Cancel any previous session and scrub
+    // visual leftovers before wiring the newly-rendered controls.
+    this.activeReorderCleanup?.();
+    this.activeReorderCleanup = null;
+    document.querySelectorAll(".smooth-reorder-ghost").forEach(node => node.remove());
+    document.body.classList.remove("reorder-active");
+    root.querySelectorAll<HTMLElement>(".smooth-reorder-source,.drag-handle-active").forEach(node => {
+      node.classList.remove("smooth-reorder-source","drag-handle-active");
+      node.style.transition="";
+      node.style.transform="";
+    });
+
     root.querySelectorAll<HTMLElement>(handleSelector).forEach(handle => handle.addEventListener("pointerdown", event => {
       if (event.button !== 0 || !event.isPrimary) return;
       const source = handle.closest<HTMLElement>(itemSelector);
@@ -1734,14 +1748,14 @@ class FamilyExerciseApp {
       const from = currentItems().indexOf(source);
       if (from < 0) return;
 
+      this.activeReorderCleanup?.();
       beforeStart?.();
       event.preventDefault();
       event.stopPropagation();
       document.getSelection()?.removeAllRanges();
 
-      // Pointer capture makes touch reordering immediate on iOS instead of
-      // waiting long enough for WebKit's text-selection gesture to win.
-      try { handle.setPointerCapture(event.pointerId); } catch { /* best effort */ }
+      const pointerId = event.pointerId;
+      try { handle.setPointerCapture(pointerId); } catch { /* best effort */ }
 
       const initialRect = source.getBoundingClientRect();
       const ghost = document.createElement("div");
@@ -1792,7 +1806,11 @@ class FamilyExerciseApp {
         });
       };
 
+      let finished = false;
+      let safetyTimer = 0;
+
       const onMove = (moveEvent:PointerEvent) => {
+        if (moveEvent.pointerId !== pointerId || finished) return;
         moveEvent.preventDefault();
         document.getSelection()?.removeAllRanges();
         positionGhost(moveEvent.clientX,moveEvent.clientY);
@@ -1808,11 +1826,31 @@ class FamilyExerciseApp {
         flipAround(()=>parent.insertBefore(source,reference));
       };
 
-      const finish = () => {
-        handle.removeEventListener("pointermove",onMove);
-        handle.removeEventListener("pointerup",finish);
-        handle.removeEventListener("pointercancel",finish);
-        try { if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId); } catch { /* best effort */ }
+      const preventSelection = (selectionEvent:Event) => selectionEvent.preventDefault();
+      const restoreOriginalPosition = () => {
+        const now = currentItems();
+        const current = now.indexOf(source);
+        if (current < 0 || current === from) return;
+        const withoutSource = now.filter(item => item !== source);
+        parent.insertBefore(source, withoutSource[from] ?? null);
+      };
+
+      const cleanup = (commitMove:boolean) => {
+        if (finished) return;
+        finished = true;
+        if (safetyTimer) window.clearTimeout(safetyTimer);
+        window.removeEventListener("pointermove",onMove,true);
+        window.removeEventListener("pointerup",onPointerUp,true);
+        window.removeEventListener("pointercancel",onPointerCancel,true);
+        window.removeEventListener("blur",onAbort,true);
+        window.removeEventListener("pagehide",onAbort,true);
+        document.removeEventListener("visibilitychange",onVisibilityChange,true);
+        document.removeEventListener("selectstart",preventSelection,true);
+        document.removeEventListener("contextmenu",preventSelection,true);
+        handle.removeEventListener("lostpointercapture",onLostPointerCapture);
+        try { if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId); } catch { /* best effort */ }
+
+        if (!commitMove) restoreOriginalPosition();
         const to=currentItems().indexOf(source);
         ghost.remove();
         source.classList.remove("smooth-reorder-source");
@@ -1820,12 +1858,40 @@ class FamilyExerciseApp {
         document.body.classList.remove("reorder-active");
         currentItems().forEach(item=>{item.style.transition="";item.style.transform="";});
         document.getSelection()?.removeAllRanges();
-        if(to>=0&&to!==from) commit(from,to);
+        if (this.activeReorderCleanup === cancelActiveReorder) this.activeReorderCleanup = null;
+        if(commitMove && to>=0 && to!==from) commit(from,to);
       };
 
-      handle.addEventListener("pointermove",onMove,{passive:false});
-      handle.addEventListener("pointerup",finish,{once:true});
-      handle.addEventListener("pointercancel",finish,{once:true});
+      const onPointerUp = (upEvent:PointerEvent) => {
+        if (upEvent.pointerId !== pointerId) return;
+        upEvent.preventDefault();
+        cleanup(true);
+      };
+      const onPointerCancel = (cancelEvent:PointerEvent) => {
+        if (cancelEvent.pointerId !== pointerId) return;
+        cleanup(false);
+      };
+      const onLostPointerCapture = (lostEvent:PointerEvent) => {
+        if (lostEvent.pointerId !== pointerId) return;
+        cleanup(false);
+      };
+      const onAbort = () => cleanup(false);
+      const onVisibilityChange = () => { if (document.visibilityState === "hidden") cleanup(false); };
+      const cancelActiveReorder = () => cleanup(false);
+
+      // Window-level listeners are the authority. iOS can lose element-level
+      // pointer capture during scrolling, app switching, or DOM replacement.
+      window.addEventListener("pointermove",onMove,{passive:false,capture:true});
+      window.addEventListener("pointerup",onPointerUp,{passive:false,capture:true});
+      window.addEventListener("pointercancel",onPointerCancel,{capture:true});
+      window.addEventListener("blur",onAbort,{capture:true});
+      window.addEventListener("pagehide",onAbort,{capture:true});
+      document.addEventListener("visibilitychange",onVisibilityChange,{capture:true});
+      document.addEventListener("selectstart",preventSelection,{capture:true});
+      document.addEventListener("contextmenu",preventSelection,{capture:true});
+      handle.addEventListener("lostpointercapture",onLostPointerCapture);
+      safetyTimer = window.setTimeout(cancelActiveReorder,20_000);
+      this.activeReorderCleanup = cancelActiveReorder;
     }));
   }
 

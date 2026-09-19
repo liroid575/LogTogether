@@ -1,4 +1,4 @@
-const CACHE = "logtogether-shell-v0.15.0-push-ui-hotfix7";
+const CACHE = "logtogether-shell-v0.15.0-drag-cleanup-hotfix8";
 const SHELL = [
   "/",
   "/index.html",

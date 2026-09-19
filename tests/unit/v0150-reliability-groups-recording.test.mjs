@@ -185,10 +185,24 @@ await test("Family Compare never waits indefinitely for full private companion r
   assert.match(main, /older weekly summary with totals only/);
 });
 
+await test("touch reordering always tears down stale iOS drag sessions", async () => {
+  const main = await text("src/main.ts");
+  assert.match(main, /private activeReorderCleanup/);
+  assert.match(main, /window\.addEventListener\("pointerup",onPointerUp/);
+  assert.match(main, /window\.addEventListener\("pointercancel",onPointerCancel/);
+  assert.match(main, /handle\.addEventListener\("lostpointercapture",onLostPointerCapture\)/);
+  assert.match(main, /window\.addEventListener\("pagehide",onAbort/);
+  assert.match(main, /document\.addEventListener\("visibilitychange",onVisibilityChange/);
+  assert.match(main, /window\.setTimeout\(cancelActiveReorder,20_000\)/);
+  assert.match(main, /restoreOriginalPosition/);
+  assert.match(main, /document\.querySelectorAll\("\.smooth-reorder-ghost"\)/);
+  assert.match(main, /document\.addEventListener\("selectstart",preventSelection/);
+});
+
 await test("v0.15 version and service-worker cache are explicit", async () => {
   const [pkg, main, sw, verify] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js"), text("scripts/verify-live-deployment.mjs")]);
   assert.equal(JSON.parse(pkg).version, "0.15.0");
   assert.match(main, /APP_VERSION = "0\.15\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.15\.0-push-ui-hotfix7/);
+  assert.match(sw, /logtogether-shell-v0\.15\.0-drag-cleanup-hotfix8/);
   assert.match(verify, /v0\.15\.0/);
 });
