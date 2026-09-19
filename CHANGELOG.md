@@ -279,3 +279,10 @@ See prior release for routine deletion/sync, continuous circuit rest timing, goa
 ## v0.15.0 reorder layout hotfix 9
 - Refined mobile reorder ergonomics: two-line exercise names, compact destructive action, movement threshold, smaller drag preview, and viewport-safe position menu.
 - No data, scoring, authorization, or dependency changes.
+
+## v0.15.0 reorder slots hotfix 10
+- Replaced live DOM shuffling during pointer movement with stable, slot-based destination calculation. Dragging can only resolve to an exercise position and cannot cross into Add exercise or other following controls.
+- Restored explicit divider lines between exercises and added an accent insertion marker for the exact pending drop position.
+- Kept fail-safe iOS drag cleanup and the non-drag Move-to-position menu.
+- Live deployment verification now retries briefly for Firebase Hosting propagation instead of reporting a false negative immediately after a successful release.
+- No workout schema, scoring, Cloud authorization, Firestore Rules, Functions, notification behavior, or privacy boundary changes.

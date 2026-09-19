@@ -199,7 +199,11 @@ await test("touch reordering always tears down stale iOS drag sessions", async (
   assert.match(main, /window\.addEventListener\("pagehide",onAbort/);
   assert.match(main, /document\.addEventListener\("visibilitychange",onVisibilityChange/);
   assert.match(main, /window\.setTimeout\(cancelActiveReorder,20_000\)/);
-  assert.match(main, /restoreOriginalPosition/);
+  assert.match(main, /let destinationIndex = from/);
+  assert.match(main, /reorder-drop-before/);
+  assert.match(main, /reorder-drop-after/);
+  assert.doesNotMatch(main, /parent\.insertBefore\(source/);
+  assert.match(main, /exercise-separator/);
   assert.match(main, /document\.querySelectorAll\("\.smooth-reorder-ghost"\)/);
   assert.match(main, /document\.addEventListener\("selectstart",preventSelection/);
 });
@@ -208,6 +212,8 @@ await test("v0.15 version and service-worker cache are explicit", async () => {
   const [pkg, main, sw, verify] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js"), text("scripts/verify-live-deployment.mjs")]);
   assert.equal(JSON.parse(pkg).version, "0.15.0");
   assert.match(main, /APP_VERSION = "0\.15\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.15\.0-reorder-layout-hotfix9/);
+  assert.match(sw, /logtogether-shell-v0\.15\.0-reorder-slots-hotfix10/);
   assert.match(verify, /v0\.15\.0/);
+  assert.match(verify, /attempt <= 12/);
+  assert.match(verify, /await sleep\(1_000\)/);
 });

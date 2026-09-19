@@ -1726,15 +1726,15 @@ class FamilyExerciseApp {
     commit: (from: number, to: number) => void,
     beforeStart?: () => void
   ): void {
-    // A render or route change during an iOS drag can detach the original handle
-    // before WebKit delivers pointerup. Cancel any previous session and scrub
-    // visual leftovers before wiring the newly-rendered controls.
+    // Reordering is slot-based: the source item never leaves its list while the
+    // pointer is moving. This avoids WebKit DOM/pointer-capture races and makes
+    // the valid destination range impossible to extend into following controls.
     this.activeReorderCleanup?.();
     this.activeReorderCleanup = null;
     document.querySelectorAll(".smooth-reorder-ghost").forEach(node => node.remove());
     document.body.classList.remove("reorder-active");
-    root.querySelectorAll<HTMLElement>(".smooth-reorder-source,.drag-handle-active").forEach(node => {
-      node.classList.remove("smooth-reorder-source","drag-handle-active");
+    root.querySelectorAll<HTMLElement>(".smooth-reorder-source,.drag-handle-active,.reorder-drop-before,.reorder-drop-after").forEach(node => {
+      node.classList.remove("smooth-reorder-source","drag-handle-active","reorder-drop-before","reorder-drop-after");
       node.style.transition="";
       node.style.transform="";
     });
@@ -1764,6 +1764,36 @@ class FamilyExerciseApp {
       let activated = false;
       let ghost: HTMLDivElement | null = null;
       let ghostWidth = 0;
+      let destinationIndex = from;
+
+      const clearDropIndicator = () => currentItems().forEach(item => item.classList.remove("reorder-drop-before","reorder-drop-after"));
+
+      const listBounds = () => {
+        const items = currentItems();
+        if (!items.length) return { top: initialRect.top, bottom: initialRect.bottom };
+        const first = items[0]!.getBoundingClientRect();
+        const last = items[items.length - 1]!.getBoundingClientRect();
+        return { top: first.top, bottom: last.bottom };
+      };
+
+      const updateDestination = (clientY:number) => {
+        const items = currentItems();
+        const others = items.filter(item => item !== source);
+        clearDropIndicator();
+        if (!others.length) { destinationIndex = from; return; }
+
+        const bounds = listBounds();
+        const boundedY = Math.max(bounds.top, Math.min(bounds.bottom, clientY));
+        let insertion = others.findIndex(item => {
+          const rect = item.getBoundingClientRect();
+          return boundedY < rect.top + rect.height / 2;
+        });
+        if (insertion < 0) insertion = others.length;
+        destinationIndex = Math.max(0, Math.min(items.length - 1, insertion));
+
+        if (insertion < others.length) others[insertion]!.classList.add("reorder-drop-before");
+        else others[others.length - 1]!.classList.add("reorder-drop-after");
+      };
 
       const beginVisualDrag = (clientX:number,clientY:number) => {
         if (activated) return;
@@ -1787,34 +1817,27 @@ class FamilyExerciseApp {
           (this.locale === "zh-TW" ? "移動動作" : "Move exercise");
 
         ghost.append(grip,label);
-        ghostWidth = Math.min(Math.max(190, initialRect.width * 0.58), Math.min(300, window.innerWidth - 24));
+        ghostWidth = Math.min(Math.max(160, initialRect.width * 0.48), Math.min(260, window.innerWidth - 24));
         ghost.style.width = `${ghostWidth}px`;
         document.body.appendChild(ghost);
         source.classList.add("smooth-reorder-source");
         handle.classList.add("drag-handle-active");
         document.body.classList.add("reorder-active");
         positionGhost(clientX,clientY);
+        updateDestination(clientY);
       };
 
       const positionGhost = (clientX:number,clientY:number) => {
         if (!ghost) return;
         const width = ghost.getBoundingClientRect().width || ghostWidth;
+        const bounds = listBounds();
+        const visibleTop = Math.max(8, bounds.top);
+        const visibleBottom = Math.min(window.innerHeight - 8, bounds.bottom);
+        const boundedY = visibleBottom > visibleTop
+          ? Math.max(visibleTop, Math.min(visibleBottom, clientY))
+          : Math.max(8, Math.min(window.innerHeight - 8, clientY));
         ghost.style.left = `${Math.max(8,Math.min(window.innerWidth-width-8,clientX-width/2))}px`;
-        ghost.style.top = `${Math.max(8,Math.min(window.innerHeight-54,clientY-22))}px`;
-      };
-
-      const flipAround = (move:()=>void) => {
-        const before = new Map(currentItems().filter(item=>item!==source).map(item=>[item,item.getBoundingClientRect()] as const));
-        move();
-        if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-        currentItems().filter(item=>item!==source).forEach(item=>{
-          const oldRect=before.get(item); if(!oldRect) return;
-          const next=item.getBoundingClientRect();
-          const dy=oldRect.top-next.top;
-          if(Math.abs(dy)<1) return;
-          item.style.transition="none"; item.style.transform=`translateY(${dy}px)`;
-          requestAnimationFrame(()=>{ item.style.transition="transform 160ms cubic-bezier(.2,.8,.2,1)"; item.style.transform=""; });
-        });
+        ghost.style.top = `${Math.max(8,Math.min(window.innerHeight-52,boundedY-20))}px`;
       };
 
       let finished = false;
@@ -1831,26 +1854,13 @@ class FamilyExerciseApp {
           beginVisualDrag(moveEvent.clientX,moveEvent.clientY);
         }
         positionGhost(moveEvent.clientX,moveEvent.clientY);
+        updateDestination(moveEvent.clientY);
         const edge=72;
         if(moveEvent.clientY<edge) window.scrollBy(0,-Math.min(18,Math.ceil((edge-moveEvent.clientY)/4)));
         else if(moveEvent.clientY>window.innerHeight-edge) window.scrollBy(0,Math.min(18,Math.ceil((moveEvent.clientY-(window.innerHeight-edge))/4)));
-        const target=document.elementFromPoint(moveEvent.clientX,moveEvent.clientY)?.closest<HTMLElement>(itemSelector);
-        if(!target||target===source||target.parentElement!==parent) return;
-        const rect=target.getBoundingClientRect();
-        const beforeTarget=moveEvent.clientY<rect.top+rect.height/2;
-        const reference=beforeTarget?target:target.nextSibling;
-        if(reference===source||(!beforeTarget&&source.nextSibling===reference)||(beforeTarget&&source.nextSibling===target)) return;
-        flipAround(()=>parent.insertBefore(source,reference));
       };
 
       const preventSelection = (selectionEvent:Event) => selectionEvent.preventDefault();
-      const restoreOriginalPosition = () => {
-        const now = currentItems();
-        const current = now.indexOf(source);
-        if (current < 0 || current === from) return;
-        const withoutSource = now.filter(item => item !== source);
-        parent.insertBefore(source, withoutSource[from] ?? null);
-      };
 
       const cleanup = (commitMove:boolean) => {
         if (finished) return;
@@ -1867,22 +1877,20 @@ class FamilyExerciseApp {
         handle.removeEventListener("lostpointercapture",onLostPointerCapture);
         try { if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId); } catch { /* best effort */ }
 
-        if (!commitMove) restoreOriginalPosition();
-        const to=currentItems().indexOf(source);
         ghost?.remove();
         source.classList.remove("smooth-reorder-source");
         handle.classList.remove("drag-handle-active");
         document.body.classList.remove("reorder-active");
-        currentItems().forEach(item=>{item.style.transition="";item.style.transform="";});
+        clearDropIndicator();
         document.getSelection()?.removeAllRanges();
         if (this.activeReorderCleanup === cancelActiveReorder) this.activeReorderCleanup = null;
-        if(commitMove && to>=0 && to!==from) commit(from,to);
+        if(commitMove && activated && destinationIndex !== from) commit(from,destinationIndex);
       };
 
       const onPointerUp = (upEvent:PointerEvent) => {
         if (upEvent.pointerId !== pointerId) return;
         upEvent.preventDefault();
-        cleanup(activated);
+        cleanup(true);
       };
       const onPointerCancel = (cancelEvent:PointerEvent) => {
         if (cancelEvent.pointerId !== pointerId) return;
@@ -1896,8 +1904,6 @@ class FamilyExerciseApp {
       const onVisibilityChange = () => { if (document.visibilityState === "hidden") cleanup(false); };
       const cancelActiveReorder = () => cleanup(false);
 
-      // Window-level listeners are the authority. iOS can lose element-level
-      // pointer capture during scrolling, app switching, or DOM replacement.
       window.addEventListener("pointermove",onMove,{passive:false,capture:true});
       window.addEventListener("pointerup",onPointerUp,{passive:false,capture:true});
       window.addEventListener("pointercancel",onPointerCancel,{capture:true});
@@ -3105,7 +3111,7 @@ class FamilyExerciseApp {
       if (!items.length) return "";
       return `<optgroup label="${escapeHtml(this.exerciseLibraryGroupLabel(group))}">${items.map(exercise => `<option value="${escapeHtml(exercise.id)}" ${exercise.id === selected ? "selected" : ""}>${escapeHtml(exercise.names[this.locale])}</option>`).join("")}</optgroup>`;
     }).join("");
-    return `<form id="circuit-builder" class="card circuit-builder"><div class="row"><div><strong>${this.locale === "zh-TW" ? "循環訓練" : "Circuit"}</strong><div class="small muted">${this.locale === "zh-TW" ? "設定要重複幾輪，以及每輪依序完成的動作。直接拖曳把手即可排序；「⋯」可直接選擇目的位置。" : "Choose rounds and movement order. Drag the handle to reorder immediately; use “⋯” to choose a destination directly."}</div></div></div><div class="form-two"><div class="field"><label>${this.locale === "zh-TW" ? "名稱" : "Name"}</label><input class="input" name="circuitName" maxlength="50" value="${escapeHtml(this.circuitDraftName)}"></div><div class="field"><label>${this.locale === "zh-TW" ? "輪數" : "Rounds"}</label><input class="input" name="circuitRounds" type="number" min="1" max="10" value="${this.circuitDraftRounds}"><small>${this.locale === "zh-TW" ? "1 輪 = 依序完成下方所有動作" : "1 round = complete every movement below in order"}</small></div></div><div class="circuit-rows">${this.circuitDraftRows.map((row,index)=>{ const definition=exerciseById(row.exerciseId); return `<section class="circuit-row" data-circuit-drag="${index}"><div class="circuit-row-header"><span class="circuit-order">${index+1}</span><strong>${this.locale === "zh-TW" ? `動作 ${index+1}` : `Movement ${index+1}`}</strong><div class="circuit-order-buttons"><button type="button" class="drag-handle-button compact-reorder-handle" data-circuit-drag-handle="${index}" aria-label="${this.locale === "zh-TW" ? "拖曳排序" : "Drag to reorder"}" title="${this.locale === "zh-TW" ? "拖曳排序" : "Drag to reorder"}">⠿</button>${this.movePositionMenu("circuit-position",index,this.circuitDraftRows.length)}<button type="button" class="icon-btn subtle-danger" data-circuit-remove="${index}" ${this.circuitDraftRows.length <= 1 ? "disabled" : ""} aria-label="${this.locale === "zh-TW" ? "刪除動作" : "Remove movement"}">${icon("trash")}</button></div></div><div class="circuit-builder-exercise"><select class="select" name="exercise_${index}" data-circuit-exercise-index="${index}">${options(row.exerciseId)}</select>${definition ? `<div class="exercise-preview-card compact-preview"><span>${escapeHtml(this.exercisePreviewHint(definition))}</span><a class="exercise-example-link" href="${escapeHtml(this.exerciseImageSearchUrl(definition))}" target="_blank" rel="noopener noreferrer">${this.locale === "zh-TW" ? "查看圖片示範" : "View image examples"}</a></div>` : ""}</div>${this.circuitTargetFields(row,index)}</section>`; }).join("")}</div><div class="row"><button type="button" class="btn small" data-action="add-circuit-row">${icon("plus")} ${this.locale === "zh-TW" ? "新增動作" : "Add movement"}</button><button class="btn primary" type="submit">${this.locale === "zh-TW" ? "開始循環" : "Start circuit"}</button></div></form>`;
+    return `<form id="circuit-builder" class="card circuit-builder"><div class="row"><div><strong>${this.locale === "zh-TW" ? "循環訓練" : "Circuit"}</strong><div class="small muted">${this.locale === "zh-TW" ? "設定要重複幾輪，以及每輪依序完成的動作。直接拖曳把手即可排序；「⋯」可直接選擇目的位置。" : "Choose rounds and movement order. Drag the handle to reorder immediately; use “⋯” to choose a destination directly."}</div></div></div><div class="form-two"><div class="field"><label>${this.locale === "zh-TW" ? "名稱" : "Name"}</label><input class="input" name="circuitName" maxlength="50" value="${escapeHtml(this.circuitDraftName)}"></div><div class="field"><label>${this.locale === "zh-TW" ? "輪數" : "Rounds"}</label><input class="input" name="circuitRounds" type="number" min="1" max="10" value="${this.circuitDraftRounds}"><small>${this.locale === "zh-TW" ? "1 輪 = 依序完成下方所有動作" : "1 round = complete every movement below in order"}</small></div></div><div class="circuit-rows">${this.circuitDraftRows.map((row,index)=>{ const definition=exerciseById(row.exerciseId); return `${index ? `<div class="exercise-separator" aria-hidden="true"></div>` : ""}<section class="circuit-row" data-circuit-drag="${index}"><div class="circuit-row-header"><span class="circuit-order">${index+1}</span><strong>${this.locale === "zh-TW" ? `動作 ${index+1}` : `Movement ${index+1}`}</strong><div class="circuit-order-buttons"><button type="button" class="drag-handle-button compact-reorder-handle" data-circuit-drag-handle="${index}" aria-label="${this.locale === "zh-TW" ? "拖曳排序" : "Drag to reorder"}" title="${this.locale === "zh-TW" ? "拖曳排序" : "Drag to reorder"}">⠿</button>${this.movePositionMenu("circuit-position",index,this.circuitDraftRows.length)}<button type="button" class="icon-btn subtle-danger" data-circuit-remove="${index}" ${this.circuitDraftRows.length <= 1 ? "disabled" : ""} aria-label="${this.locale === "zh-TW" ? "刪除動作" : "Remove movement"}">${icon("trash")}</button></div></div><div class="circuit-builder-exercise"><select class="select" name="exercise_${index}" data-circuit-exercise-index="${index}">${options(row.exerciseId)}</select>${definition ? `<div class="exercise-preview-card compact-preview"><span>${escapeHtml(this.exercisePreviewHint(definition))}</span><a class="exercise-example-link" href="${escapeHtml(this.exerciseImageSearchUrl(definition))}" target="_blank" rel="noopener noreferrer">${this.locale === "zh-TW" ? "查看圖片示範" : "View image examples"}</a></div>` : ""}</div>${this.circuitTargetFields(row,index)}</section>`; }).join("")}</div><div class="row"><button type="button" class="btn small" data-action="add-circuit-row">${icon("plus")} ${this.locale === "zh-TW" ? "新增動作" : "Add movement"}</button><button class="btn primary" type="submit">${this.locale === "zh-TW" ? "開始循環" : "Start circuit"}</button></div></form>`;
   }
 
   private renderRecent(limit = 8): string {
@@ -4409,7 +4415,7 @@ class FamilyExerciseApp {
     const selector = routines.length ? `<label class="field routine-manager-picker"><span>${zh?"選擇已儲存訓練":"Choose a saved routine"}</span><select class="select" id="routine-manager-picker"><option value="">${zh?"請選擇要編輯或刪除的訓練":"Choose a routine to edit or delete"}</option>${routines.map(r=>`<option value="${escapeHtml(r.id)}" ${selected?.id===r.id?"selected":""}>${escapeHtml(r.name)}</option>`).join("")}</select></label>` : `<div class="empty-mini">${zh?"還沒有已儲存訓練。":"No saved routines yet."}</div>`;
     const selectedPanel = selected ? `<div class="routine-manager-selected"><div><strong>${escapeHtml(selected.name)}</strong><span>${selected.mode==="circuit"?`${selected.rounds??1} ${zh?"輪":"rounds"} · `:""}${selected.exercises.length} ${zh?"個動作":"exercises"}</span></div><div class="routine-manager-actions"><button class="btn small primary" type="button" data-action="routine-edit-selected">${zh?"編輯":"Edit"}</button><button class="btn small" type="button" data-action="routine-use-selected">${zh?"載入":"Load"}</button><button class="btn small danger" type="button" data-action="routine-delete-selected-one">${zh?"刪除":"Delete"}</button></div></div>` : "";
     const bulk = routines.length > 1 ? `<button class="btn small ghost routine-bulk-toggle" type="button" data-action="routine-toggle-bulk">${this.routineBulkMode?(zh?"關閉多選刪除":"Close multiple selection"):(zh?"多選刪除":"Select multiple to delete")}</button>${this.routineBulkMode?`<div class="routine-bulk-list">${routines.map(r=>`<label><input type="checkbox" data-routine-select="${escapeHtml(r.id)}" ${this.routineDeleteIds.has(r.id)?"checked":""}> ${escapeHtml(r.name)}</label>`).join("")}<button class="btn danger" type="button" data-action="routine-delete-selected" ${this.routineDeleteIds.size?"":"disabled"}>${zh?"刪除勾選項目":"Delete selected"}</button></div>`:""}` : "";
-    return `<details class="card routine-manager" data-fold="routine-manager" ${this.folds.has("routine-manager")?"open":""}><summary>${zh?"管理已儲存訓練":"Manage saved routines"} · ${routines.length}</summary><p class="small muted">${zh?"先選擇一個範本；編輯器只會在你按下編輯後顯示。完成紀錄不會被更改。":"Choose a template first. The full editor appears only after you select Edit; completed records stay unchanged."}</p>${selector}${selectedPanel}${bulk}${draft?`<form id="routine-edit-form" class="routine-editor"><h3>${zh?"編輯範本":"Edit template"}</h3><label class="field"><span class="label">${zh?"名稱":"Name"}</span><input class="input" id="routine-edit-name" required maxlength="100" value="${escapeHtml(draft.name)}"></label>${draft.mode==="circuit"?`<label class="field"><span class="label">${zh?"輪數":"Rounds"}</span><input class="input" id="routine-edit-rounds" type="number" min="1" max="10" step="1" required value="${draft.rounds??3}"></label>`:""}${draft.exercises.map((ex,ei)=>`<fieldset class="routine-editor-exercise" data-routine-drag="${ei}" aria-label="${ei+1}. ${escapeHtml(exerciseById(ex.exerciseId)?.names[this.locale]??ex.exerciseId)}"><div class="routine-editor-exercise-head"><strong>${ei+1}. ${escapeHtml(exerciseById(ex.exerciseId)?.names[this.locale]??ex.exerciseId)}</strong><div class="routine-order"><button type="button" class="drag-handle-button compact-reorder-handle" data-routine-drag-handle="${ei}" aria-label="${zh?"拖曳排序":"Drag to reorder"}" title="${zh?"拖曳排序":"Drag to reorder"}">⠿</button>${this.movePositionMenu("routine-position",ei,draft.exercises.length)}<button class="icon-btn subtle-danger routine-remove-compact" type="button" data-routine-remove-exercise="${ei}" aria-label="${zh?"移除動作":"Remove exercise"}" title="${zh?"移除動作":"Remove exercise"}">${icon("trash")}</button></div></div><label class="field"><span class="label">${zh?"組間休息秒數":"Rest between sets (seconds)"}</span><input class="input" type="number" min="0" max="3600" step="1" required value="${ex.restSec}" data-routine-rest="${ei}"></label>${(draft.mode==="circuit"?ex.sets.slice(0,1):ex.sets).map((set,si)=>`<div class="routine-editor-set"><strong>${draft.mode==="circuit"?(zh?"每輪":"Each round"):`${zh?"組":"Set"} ${si+1}`}</strong><div class="routine-fields">${fields(set,ex,ei,si)}</div>${draft.mode!=="circuit"&&ex.sets.length>1?`<button class="btn small danger" type="button" data-routine-remove-set="${ei}" data-rs="${si}">${zh?"移除這組":"Remove set"}</button>`:""}</div>`).join("")}${draft.mode!=="circuit"?`<button class="btn" type="button" data-routine-add-set="${ei}">${zh?"新增一組":"Add set"}</button>`:""}</fieldset>`).join("")}<label class="field"><span class="label">${zh?"新增動作":"Add exercise"}</span><select class="select" id="routine-add-exercise">${routineExerciseOptions}</select></label><button class="btn" type="button" data-action="routine-add-exercise">${zh?"新增動作":"Add exercise"}</button><div class="routine-editor-actions"><button class="btn primary" type="submit">${zh?"儲存變更":"Save changes"}</button><button class="btn" type="button" data-action="routine-edit-cancel">${zh?"取消編輯":"Cancel editing"}</button></div></form>`:""}</details>`;
+    return `<details class="card routine-manager" data-fold="routine-manager" ${this.folds.has("routine-manager")?"open":""}><summary>${zh?"管理已儲存訓練":"Manage saved routines"} · ${routines.length}</summary><p class="small muted">${zh?"先選擇一個範本；編輯器只會在你按下編輯後顯示。完成紀錄不會被更改。":"Choose a template first. The full editor appears only after you select Edit; completed records stay unchanged."}</p>${selector}${selectedPanel}${bulk}${draft?`<form id="routine-edit-form" class="routine-editor"><h3>${zh?"編輯範本":"Edit template"}</h3><label class="field"><span class="label">${zh?"名稱":"Name"}</span><input class="input" id="routine-edit-name" required maxlength="100" value="${escapeHtml(draft.name)}"></label>${draft.mode==="circuit"?`<label class="field"><span class="label">${zh?"輪數":"Rounds"}</span><input class="input" id="routine-edit-rounds" type="number" min="1" max="10" step="1" required value="${draft.rounds??3}"></label>`:""}${draft.exercises.map((ex,ei)=>`${ei ? `<div class="exercise-separator" aria-hidden="true"></div>` : ""}<fieldset class="routine-editor-exercise" data-routine-drag="${ei}" aria-label="${ei+1}. ${escapeHtml(exerciseById(ex.exerciseId)?.names[this.locale]??ex.exerciseId)}"><div class="routine-editor-exercise-head"><strong>${ei+1}. ${escapeHtml(exerciseById(ex.exerciseId)?.names[this.locale]??ex.exerciseId)}</strong><div class="routine-order"><button type="button" class="drag-handle-button compact-reorder-handle" data-routine-drag-handle="${ei}" aria-label="${zh?"拖曳排序":"Drag to reorder"}" title="${zh?"拖曳排序":"Drag to reorder"}">⠿</button>${this.movePositionMenu("routine-position",ei,draft.exercises.length)}<button class="icon-btn subtle-danger routine-remove-compact" type="button" data-routine-remove-exercise="${ei}" aria-label="${zh?"移除動作":"Remove exercise"}" title="${zh?"移除動作":"Remove exercise"}">${icon("trash")}</button></div></div><label class="field"><span class="label">${zh?"組間休息秒數":"Rest between sets (seconds)"}</span><input class="input" type="number" min="0" max="3600" step="1" required value="${ex.restSec}" data-routine-rest="${ei}"></label>${(draft.mode==="circuit"?ex.sets.slice(0,1):ex.sets).map((set,si)=>`<div class="routine-editor-set"><strong>${draft.mode==="circuit"?(zh?"每輪":"Each round"):`${zh?"組":"Set"} ${si+1}`}</strong><div class="routine-fields">${fields(set,ex,ei,si)}</div>${draft.mode!=="circuit"&&ex.sets.length>1?`<button class="btn small danger" type="button" data-routine-remove-set="${ei}" data-rs="${si}">${zh?"移除這組":"Remove set"}</button>`:""}</div>`).join("")}${draft.mode!=="circuit"?`<button class="btn" type="button" data-routine-add-set="${ei}">${zh?"新增一組":"Add set"}</button>`:""}</fieldset>`).join("")}<label class="field"><span class="label">${zh?"新增動作":"Add exercise"}</span><select class="select" id="routine-add-exercise">${routineExerciseOptions}</select></label><button class="btn" type="button" data-action="routine-add-exercise">${zh?"新增動作":"Add exercise"}</button><div class="routine-editor-actions"><button class="btn primary" type="submit">${zh?"儲存變更":"Save changes"}</button><button class="btn" type="button" data-action="routine-edit-cancel">${zh?"取消編輯":"Cancel editing"}</button></div></form>`:""}</details>`;
   }
 
   private bindRoutineManager(): void {
@@ -4592,7 +4598,7 @@ class FamilyExerciseApp {
     const addControl = this.profileRepeats(profile)
       ? `<button class="btn small touch" data-add-set="${exerciseIndex}">${icon("plus")} ${profile === "rounds" ? (this.locale === "zh-TW" ? "新增回合" : "Add round") : escapeHtml(this.text("addSet"))}</button>`
       : "";
-    return `<section class="exercise-card regular-workout-card ${profile !== "sets" ? "session-exercise-card" : ""}" ${canReorder ? `data-workout-exercise-drag="${exerciseIndex}"` : ""}>
+    return `${exerciseIndex ? `<div class="exercise-separator" aria-hidden="true"></div>` : ""}<section class="exercise-card regular-workout-card ${profile !== "sets" ? "session-exercise-card" : ""}" ${canReorder ? `data-workout-exercise-drag="${exerciseIndex}"` : ""}>
       <div class="exercise-head"><div class="exercise-head-main"><div class="row-start">${canReorder ? `<button type="button" class="drag-handle-button" data-workout-exercise-drag-handle="${exerciseIndex}" aria-label="${this.locale === "zh-TW" ? "拖曳排序" : "Drag to reorder"}">⠿</button>` : ""}<div class="exercise-name">${exerciseIndex+1}. ${escapeHtml(name)}</div>${canReorder ? this.movePositionMenu("workout-position",exerciseIndex,workout.exercises.length) : ""}${!editingExisting ? `<button class="icon-btn subtle-danger exercise-remove-compact" data-remove-exercise="${exerciseIndex}" aria-label="${escapeHtml(this.text("removeExercise"))}" title="${escapeHtml(this.text("removeExercise"))}">${icon("trash")}</button>` : ""}</div>${definition ? `<div class="exercise-meta-line">${escapeHtml(this.exercisePreviewHint(definition))} · <a class="exercise-example-link" href="${escapeHtml(this.exerciseImageSearchUrl(definition))}" target="_blank" rel="noopener noreferrer">${this.locale === "zh-TW" ? "圖片示範" : "Image examples"}</a></div>${focus ? `<div class="exercise-focus-line">${escapeHtml(focus)}</div>` : ""}` : ""}${restControl}${exercise.startedAt ? `<div class="tiny muted">${this.formatTime(exercise.startedAt)}${exercise.completedAt ? `–${this.formatTime(exercise.completedAt)}` : ""}</div>` : ""}</div>${editingExisting ? `<button class="icon-btn danger" data-remove-exercise="${exerciseIndex}" aria-label="${escapeHtml(this.text("removeExercise"))}" title="${escapeHtml(this.text("removeExercise"))}">${icon("trash")}</button>` : ""}</div>
       <div class="set-list regular-set-list">${exercise.sets.map((set, setIndex) => this.renderSetRow(workout, definition, exerciseIndex, setIndex, set)).join("")}</div>
       ${allCompleted ? `<div class="effort-prompt"><div><strong>${escapeHtml(this.text("effortPrompt"))}</strong><span>${this.locale === "zh-TW" ? "1 = 很輕鬆，5 = 非常吃力" : "1 = very easy, 5 = very hard"}</span></div><div class="effort-scale">${difficultyLabels.map((label,index)=>`<button class="effort-btn ${exercise.difficulty === index+1 ? "selected" : ""}" data-difficulty="${index+1}" data-exercise-index="${exerciseIndex}" title="${escapeHtml(label)}">${index+1}</button>`).join("")}</div>${exercise.difficulty ? `<div class="small muted">${escapeHtml(difficultyLabels[exercise.difficulty-1] ?? "")}</div>` : ""}</div>` : ""}
