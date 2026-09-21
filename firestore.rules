@@ -137,6 +137,31 @@ service cloud.firestore {
         && validVisibility(after);
     }
 
+    function validWorkoutPerformance(data) {
+      let metrics = data.get('performance', {});
+      return metrics is map
+        && !data.keys().hasAny(['heartRate', 'heartRateBpm', 'averageHeartRateBpm', 'maximumHeartRateBpm', 'healthMetrics', 'privateMetrics'])
+        && metrics.keys().hasOnly(['elapsedDurationSec', 'activeDurationSec', 'distanceKm', 'averagePaceSec', 'fastestPaceSec', 'paceDistanceM', 'averageSpeedKph', 'maximumSpeedKph', 'elevationGainM', 'averageCadenceRpm', 'maximumCadenceRpm', 'poolLengthM', 'laps', 'averageStrokeRateSpm', 'strokeCount', 'averagePowerWatts', 'maximumPowerWatts', 'resistanceLevel'])
+        && (!metrics.keys().hasAny(['elapsedDurationSec']) || (metrics.elapsedDurationSec is int && metrics.elapsedDurationSec > 0 && metrics.elapsedDurationSec <= 604800))
+        && (!metrics.keys().hasAny(['activeDurationSec']) || (metrics.activeDurationSec is int && metrics.activeDurationSec > 0 && metrics.activeDurationSec <= 604800))
+        && (!metrics.keys().hasAny(['distanceKm']) || (metrics.distanceKm is number && metrics.distanceKm > 0 && metrics.distanceKm <= 10000))
+        && (!metrics.keys().hasAny(['averagePaceSec']) || (metrics.averagePaceSec is int && metrics.averagePaceSec > 0 && metrics.averagePaceSec <= 86400))
+        && (!metrics.keys().hasAny(['fastestPaceSec']) || (metrics.fastestPaceSec is int && metrics.fastestPaceSec > 0 && metrics.fastestPaceSec <= 86400))
+        && (!metrics.keys().hasAny(['paceDistanceM']) || (metrics.paceDistanceM is int && metrics.paceDistanceM > 0 && metrics.paceDistanceM <= 1000))
+        && (!metrics.keys().hasAny(['averageSpeedKph']) || (metrics.averageSpeedKph is number && metrics.averageSpeedKph > 0 && metrics.averageSpeedKph <= 500))
+        && (!metrics.keys().hasAny(['maximumSpeedKph']) || (metrics.maximumSpeedKph is number && metrics.maximumSpeedKph > 0 && metrics.maximumSpeedKph <= 500))
+        && (!metrics.keys().hasAny(['elevationGainM']) || (metrics.elevationGainM is number && metrics.elevationGainM > 0 && metrics.elevationGainM <= 100000))
+        && (!metrics.keys().hasAny(['averageCadenceRpm']) || (metrics.averageCadenceRpm is number && metrics.averageCadenceRpm > 0 && metrics.averageCadenceRpm <= 500))
+        && (!metrics.keys().hasAny(['maximumCadenceRpm']) || (metrics.maximumCadenceRpm is number && metrics.maximumCadenceRpm > 0 && metrics.maximumCadenceRpm <= 500))
+        && (!metrics.keys().hasAny(['poolLengthM']) || (metrics.poolLengthM is number && metrics.poolLengthM > 0 && metrics.poolLengthM <= 200))
+        && (!metrics.keys().hasAny(['laps']) || (metrics.laps is number && metrics.laps > 0 && metrics.laps <= 100000))
+        && (!metrics.keys().hasAny(['averageStrokeRateSpm']) || (metrics.averageStrokeRateSpm is number && metrics.averageStrokeRateSpm > 0 && metrics.averageStrokeRateSpm <= 500))
+        && (!metrics.keys().hasAny(['strokeCount']) || (metrics.strokeCount is number && metrics.strokeCount > 0 && metrics.strokeCount <= 1000000))
+        && (!metrics.keys().hasAny(['averagePowerWatts']) || (metrics.averagePowerWatts is number && metrics.averagePowerWatts > 0 && metrics.averagePowerWatts <= 10000))
+        && (!metrics.keys().hasAny(['maximumPowerWatts']) || (metrics.maximumPowerWatts is number && metrics.maximumPowerWatts > 0 && metrics.maximumPowerWatts <= 10000))
+        && (!metrics.keys().hasAny(['resistanceLevel']) || (metrics.resistanceLevel is number && metrics.resistanceLevel > 0 && metrics.resistanceLevel <= 10000));
+    }
+
     function sameInviteCore(before, after) {
       return after.schemaVersion == before.schemaVersion
         && after.familyId == before.familyId
@@ -595,9 +620,11 @@ service cloud.firestore {
     match /workouts/{workoutId} {
       allow get, list: if canReadOwnedResource(resource.data);
       allow create: if validOwnedCreate(request.resource.data)
-        && request.resource.data.activityKind == 'strength';
+        && request.resource.data.activityKind == 'strength'
+        && validWorkoutPerformance(request.resource.data);
       allow update: if validOwnedUpdate(resource.data, request.resource.data)
-        && request.resource.data.activityKind == resource.data.activityKind;
+        && request.resource.data.activityKind == resource.data.activityKind
+        && validWorkoutPerformance(request.resource.data);
       allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
     }
 
@@ -679,6 +706,35 @@ service cloud.firestore {
         && request.resource.data.familyId == resource.data.familyId
         && request.resource.data.schemaVersion == resource.data.schemaVersion;
       allow delete: if signedIn() && request.auth.uid == uid && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Heart-rate readings are health data. They are stored separately from the
+    // family-readable workout document and remain owner-only even when the
+    // caller is the family owner or shares a group with the athlete.
+    match /privateWorkoutMetrics/{metricsId} {
+      allow get, list: if signedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll(['schemaVersion', 'workoutId', 'ownerId', 'familyId', 'clientUpdatedAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['schemaVersion', 'workoutId', 'ownerId', 'familyId', 'averageHeartRateBpm', 'maximumHeartRateBpm', 'clientUpdatedAt', 'updatedAt'])
+        && request.resource.data.schemaVersion == 1
+        && request.resource.data.workoutId is string
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.familyId is string
+        && hasActiveAccess(request.resource.data.familyId)
+        && (!request.resource.data.keys().hasAny(['averageHeartRateBpm']) || (request.resource.data.averageHeartRateBpm is int && request.resource.data.averageHeartRateBpm > 0 && request.resource.data.averageHeartRateBpm <= 300))
+        && (!request.resource.data.keys().hasAny(['maximumHeartRateBpm']) || (request.resource.data.maximumHeartRateBpm is int && request.resource.data.maximumHeartRateBpm > 0 && request.resource.data.maximumHeartRateBpm <= 300))
+        && request.resource.data.clientUpdatedAt is string
+        && request.resource.data.updatedAt is timestamp;
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.familyId == resource.data.familyId
+        && request.resource.data.workoutId == resource.data.workoutId
+        && request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['averageHeartRateBpm', 'maximumHeartRateBpm', 'clientUpdatedAt', 'updatedAt'])
+        && (!request.resource.data.keys().hasAny(['averageHeartRateBpm']) || (request.resource.data.averageHeartRateBpm is int && request.resource.data.averageHeartRateBpm > 0 && request.resource.data.averageHeartRateBpm <= 300))
+        && (!request.resource.data.keys().hasAny(['maximumHeartRateBpm']) || (request.resource.data.maximumHeartRateBpm is int && request.resource.data.maximumHeartRateBpm > 0 && request.resource.data.maximumHeartRateBpm <= 300));
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
     }
 
     // Detailed mission configuration is private; weekly difficulty is shared. Family-facing progress

@@ -8,9 +8,9 @@ The project gradually grew into a bilingual family fitness PWA with structured w
 
 ## Status
 
-LogTogether is currently a **family-testing alpha**.
+LogTogether is currently an **alpha** developed through real family use.
 
-The current application version is **v0.15.0**. It is actively used for family-oriented testing, but it is not yet presented as a public production service.
+The current application version is **v0.16.0**. The source is intended for personal and family self-hosting; the maintainer's own family deployment is private and is not a public demo backend.
 
 The project favors:
 
@@ -72,7 +72,7 @@ The project favors:
 - Family membership.
 - Editable family groups.
 - Group-scoped visibility.
-- Family progress and weekly achievements.
+- Family progress and recent activity summaries.
 - Family profile comparisons.
 - Monthly and hiking badges.
 - Access revocation.
@@ -224,7 +224,9 @@ This local server is useful for quickly checking a fresh build in a browser. It 
 
 **Firebase setup is not required for the basic local build.**
 
-Cloud and family features require a separately configured Firebase development environment.
+Cloud and family features require a separately configured Firebase environment owned by the person hosting the installation.
+
+For complete setup instructions, see [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## Tests
 
@@ -306,6 +308,10 @@ LogTogether/
 Generated directories such as `dist/` and `node_modules/` are intentionally not committed.
 
 ## Current release lineage
+
+### v0.16.0 — activity detail, momentum, and family polish
+
+v0.16.0 adds precise and activity-specific completed-activity metrics, keeps heart rate in a separately authorized owner-only document, combines Family recent workouts and hikes into one activity feed, fixes nested disclosures and chronological logs, and refreshes Momentum, circuit controls, saved-routine navigation, and shared exercise pickers. Scoring and the stable 156-exercise catalogue are unchanged. See [`docs/releases/V0.16.0.md`](docs/releases/V0.16.0.md).
 
 ### v0.15.0 — reliability, groups, and recording polish
 
@@ -623,3 +629,13 @@ Security-sensitive decisions are enforced outside the UI.
 Tests should protect intended behavior rather than old implementation details. When behavior intentionally changes, tests should be updated to describe the new behavior instead of forcing the application to reproduce obsolete behavior.
 
 The project is still an alpha. It is tested and actively used in a family-oriented development environment, but it should not yet be treated as a finished public production service.
+
+
+## Contributing
+
+Bug reports, documentation corrections, and focused pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+
+## License
+
+LogTogether is available under the [MIT License](LICENSE).

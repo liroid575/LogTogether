@@ -1,4 +1,5 @@
-import type { CustomSupplement, FamilyProfileSharing, GoalConfig, HikeBadgePreference, HikeRecord, HydrationDay, Locale, NotificationPreferences, ProfileData, SupplementDay, SupplementUnit, Theme, WorkoutRecord } from "../core/types.js";
+import type { CustomSupplement, FamilyProfileSharing, GoalConfig, HikeBadgePreference, HikeRecord, HydrationDay, Locale, NotificationPreferences, PrivateWorkoutMetrics, ProfileData, SupplementDay, SupplementUnit, Theme, WorkoutRecord } from "../core/types.js";
+import { sanitizePerformanceMetrics } from "../core/session-metrics.js";
 
 declare global {
   interface Window {
@@ -218,6 +219,7 @@ export interface CloudBadgeRecord {
 export interface CloudCompanionSnapshot {
   preferences: CloudUserPreferences | null;
   bodyMetrics: CloudBodyMetrics | null;
+  privateWorkoutMetrics: PrivateWorkoutMetrics[];
   hydration: HydrationDay[];
   supplements: CloudSupplementDay[];
   familyDaily: CloudFamilyDailySummary[];
@@ -1097,6 +1099,7 @@ function parseCloudWorkout(snapshot: any): CloudWorkoutEnvelope {
     visibility: data.visibility,
     selectedViewerIds: data.selectedViewerIds.filter((value: unknown) => typeof value === "string"),
     ...(data.recordingSource === "live" || data.recordingSource === "manual" || data.recordingSource === "imported" ? { recordingSource: data.recordingSource } : {}),
+    ...(data.performance && typeof data.performance === "object" ? { performance: sanitizePerformanceMetrics(data.performance) } : {}),
     exercises: data.exercises,
     ...(data.routineMode === "standard" || data.routineMode === "circuit" ? { routineMode: data.routineMode } : {}),
     ...(Number.isInteger(data.circuitRounds) ? { circuitRounds: data.circuitRounds } : {}),
@@ -1302,6 +1305,22 @@ function parseCloudBodyMetrics(snapshot: any): CloudBodyMetrics | null {
   return { schemaVersion: 1, ownerId: data.ownerId, familyId: data.familyId, ...(Number.isFinite(data.heightCm) ? { heightCm: Number(data.heightCm) } : {}), ...(["female", "male", "other", "prefer_not"].includes(data.biologicalSex) ? { biologicalSex: data.biologicalSex as ProfileData["biologicalSex"] } : {}), weightEntries, clientUpdatedAt: typeof data.clientUpdatedAt === "string" ? data.clientUpdatedAt : "" };
 }
 
+function parsePrivateWorkoutMetrics(snapshot: any): PrivateWorkoutMetrics {
+  const data = snapshot.data() as Record<string, any>;
+  if (data.schemaVersion !== 1 || typeof data.workoutId !== "string" || typeof data.ownerId !== "string" || typeof data.familyId !== "string") {
+    throw new Error("Invalid private workout metrics document.");
+  }
+  return {
+    schemaVersion: 1,
+    workoutId: data.workoutId,
+    ownerId: data.ownerId,
+    familyId: data.familyId,
+    ...(Number.isFinite(data.averageHeartRateBpm) ? { averageHeartRateBpm: Math.max(1, Math.min(300, Math.round(data.averageHeartRateBpm))) } : {}),
+    ...(Number.isFinite(data.maximumHeartRateBpm) ? { maximumHeartRateBpm: Math.max(1, Math.min(300, Math.round(data.maximumHeartRateBpm))) } : {}),
+    clientUpdatedAt: typeof data.clientUpdatedAt === "string" ? data.clientUpdatedAt : ""
+  };
+}
+
 function parseCloudHydration(snapshot: any): HydrationDay {
   const data = snapshot.data() as Record<string, any>;
   if (data.schemaVersion !== 1 || typeof data.ownerId !== "string" || typeof data.familyId !== "string" || typeof data.date !== "string") throw new Error("Invalid hydration document.");
@@ -1399,10 +1418,12 @@ export async function loadCloudCompanionState(user: FirebaseAuthUser, membership
   const hydration = firestoreModule.collection(db, "hydration");
   const supplements = firestoreModule.collection(db, "supplements");
   const badges = firestoreModule.collection(db, "badges");
+  const privateWorkoutMetrics = firestoreModule.collection(db, "privateWorkoutMetrics");
   const sharedIds = visibleSharedMemberIds(user, membership);
-  const [preferencesSnapshot, metricsSnapshot, hydrationSnapshot, supplementSnapshot, familyDailyDocs, familyWeeklyDocs, ownBadgeSnapshot, familyBadgeDocs] = await Promise.all([
+  const [preferencesSnapshot, metricsSnapshot, privateWorkoutMetricsSnapshot, hydrationSnapshot, supplementSnapshot, familyDailyDocs, familyWeeklyDocs, ownBadgeSnapshot, familyBadgeDocs] = await Promise.all([
     firestoreModule.getDoc(firestoreModule.doc(db, "users", user.uid)),
     firestoreModule.getDoc(firestoreModule.doc(db, "bodyMetrics", user.uid)),
+    firestoreModule.getDocs(firestoreModule.query(privateWorkoutMetrics, firestoreModule.where("ownerId", "==", user.uid))),
     firestoreModule.getDocs(firestoreModule.query(hydration, firestoreModule.where("ownerId", "==", user.uid))),
     firestoreModule.getDocs(firestoreModule.query(supplements, firestoreModule.where("ownerId", "==", user.uid))),
     loadSharedDocsByOwner("familyProgress", [user.uid, ...sharedIds], [["familyId", "==", membership.access.familyId]]),
@@ -1413,6 +1434,7 @@ export async function loadCloudCompanionState(user: FirebaseAuthUser, membership
   return {
     preferences: parseCloudPreferences(preferencesSnapshot),
     bodyMetrics: parseCloudBodyMetrics(metricsSnapshot),
+    privateWorkoutMetrics: privateWorkoutMetricsSnapshot.docs.map(parsePrivateWorkoutMetrics),
     hydration: hydrationSnapshot.docs.map(parseCloudHydration),
     supplements: supplementSnapshot.docs.map(parseCloudSupplementDay),
     familyDaily: familyDailyDocs.map(parseFamilyDaily),
@@ -1420,6 +1442,35 @@ export async function loadCloudCompanionState(user: FirebaseAuthUser, membership
     ownBadges: ownBadgeSnapshot.docs.map(parseCloudBadge),
     familyBadges: familyBadgeDocs.map(parseCloudBadge)
   };
+}
+
+export async function saveCloudPrivateWorkoutMetrics(user: FirebaseAuthUser, membership: CloudMembership, metrics: PrivateWorkoutMetrics): Promise<void> {
+  requireSignedInUser(user);
+  if (membership.access.status !== "active") throw new Error("Active family access is required for private workout metric sync.");
+  if (metrics.ownerId !== user.uid || metrics.familyId !== membership.access.familyId) throw new Error("Private workout metric identity does not match the signed-in family account.");
+  const db = await ensureFirestore();
+  if (!db || !firestoreModule) throw new Error("Cloud Firestore is not configured.");
+  const documentId = `${user.uid}_${metrics.workoutId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120)}`;
+  const payload: Record<string, any> = {
+    schemaVersion: 1,
+    workoutId: metrics.workoutId,
+    ownerId: user.uid,
+    familyId: membership.access.familyId,
+    clientUpdatedAt: metrics.clientUpdatedAt,
+    updatedAt: firestoreModule.serverTimestamp()
+  };
+  if (Number.isFinite(metrics.averageHeartRateBpm)) payload.averageHeartRateBpm = Math.max(1, Math.min(300, Math.round(metrics.averageHeartRateBpm!)));
+  if (Number.isFinite(metrics.maximumHeartRateBpm)) payload.maximumHeartRateBpm = Math.max(1, Math.min(300, Math.round(metrics.maximumHeartRateBpm!)));
+  await firestoreModule.setDoc(firestoreModule.doc(db, "privateWorkoutMetrics", documentId), payload);
+}
+
+export async function deleteCloudPrivateWorkoutMetrics(user: FirebaseAuthUser, membership: CloudMembership, workoutId: string): Promise<void> {
+  requireSignedInUser(user);
+  if (membership.access.status !== "active") throw new Error("Active family access is required for private workout metric sync.");
+  const db = await ensureFirestore();
+  if (!db || !firestoreModule) throw new Error("Cloud Firestore is not configured.");
+  const documentId = `${user.uid}_${workoutId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120)}`;
+  await firestoreModule.deleteDoc(firestoreModule.doc(db, "privateWorkoutMetrics", documentId));
 }
 
 export async function saveCloudPreferences(user: FirebaseAuthUser, membership: CloudMembership, value: Omit<CloudUserPreferences, "schemaVersion" | "ownerId" | "familyId" | "clientUpdatedAt">): Promise<void> {

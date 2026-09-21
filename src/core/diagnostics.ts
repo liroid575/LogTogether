@@ -55,6 +55,7 @@ export interface LogTogetherDiagnosticsV1 {
     containsNames: false;
     containsAccountIds: false;
     containsGpsPoints: false;
+    containsHealthMetrics: false;
   };
 }
 
@@ -103,7 +104,8 @@ export function buildDiagnostics(state: AppState, context: DiagnosticsContext): 
       containsRecordContents: false,
       containsNames: false,
       containsAccountIds: false,
-      containsGpsPoints: false
+      containsGpsPoints: false,
+      containsHealthMetrics: false
     }
   };
 }

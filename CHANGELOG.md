@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.16.0 — Activity Detail, Momentum & Family Polish
+
+- Added precise completed-activity timing and activity-specific optional tracker metrics.
+- Isolated heart rate in owner-only Firestore documents with emulator-tested authorization.
+- Combined Family recent workouts and hikes into one date-sorted activity feed and fixed nested disclosure state.
+- Redesigned four-week Momentum progress and queued its completion celebration.
+- Unified categorized exercise pickers and polished circuit, routine, discard, and chronological-log flows.
+- Kept exercise IDs, missions, Gold Days, calorie scoring, authentication, invitations, Pokes, and family membership unchanged.
+- Current service-worker cache marker: `logtogether-shell-v0.16.0`.
+
 ## v0.15.0 — Reliability, Groups & Recording Polish
 
 ### Cloud and PWA reliability

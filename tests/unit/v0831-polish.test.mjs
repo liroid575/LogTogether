@@ -22,9 +22,9 @@ test("mobile workout dock keeps Save routine and undo toast is moved to the top"
   assert.match(css, /\.toast \{[\s\S]*top: calc\(70px/);
 });
 
-test("discarding Workout Now clears the draft, returns Home and preserves Undo", () => {
+test("discarding Workout Now opens a fresh composer and preserves Undo", () => {
   assert.match(main, /const discarded = this\.state\.activeWorkout \? structuredClone\(this\.state\.activeWorkout\) : null/);
   assert.match(main, /this\.state\.activeWorkout = null/);
-  assert.match(main, /this\.persist\(\); this\.navigate\("home"\)/);
+  assert.match(main, /stayInComposer[\s\S]*createBlankWorkout/);
   assert.match(main, /this\.state\.activeWorkout = discarded/);
 });

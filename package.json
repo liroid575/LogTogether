@@ -1,6 +1,6 @@
 {
   "name": "logtogether",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "description": "Privacy-first bilingual family exercise tracker PWA",
@@ -17,7 +17,8 @@
     "emulators": "firebase emulators:start --only firestore",
     "deploy:preview": "firebase hosting:channel:deploy preview",
     "deploy": "firebase deploy --only hosting,firestore:rules,firestore:indexes,functions",
-    "clean:legacy": "bash scripts/cleanup-legacy-snapshots.sh"
+    "clean:legacy": "bash scripts/cleanup-legacy-snapshots.sh",
+    "verify:release": "node scripts/verify-release.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "5.0.2",

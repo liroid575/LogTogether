@@ -1,36 +1,100 @@
-# Upgrade policy
+# Upgrading LogTogether
 
-The app code and user data are deliberately independent.
+LogTogether releases are identified by Git tags such as `v0.16.0`.
 
-## Data rules
+Self-hosted installations should normally upgrade between tagged releases
+rather than arbitrary historical commits.
 
-- Every durable record has `schemaVersion`.
-- Current schema: **1**.
-- New releases should prefer additive fields.
-- Never rename/delete stored fields in the same release that introduces the replacement.
-- Unknown schema versions fail closed rather than being guessed.
-- Database migrations require a backup first.
+## Before upgrading
 
-## Release procedure
+Before changing versions:
 
-1. Create a Git branch.
-2. Make the smallest reasonable change.
-3. Run `npm test`.
-4. Run `npm run test:security` for any data/rule/auth change.
-5. Test English and Traditional Chinese manually.
-6. Build and use a Firebase Hosting preview channel.
-7. Test an existing schema-v1 dataset in the preview.
-8. Export/backup before any migration.
-9. Deploy the exact tested revision.
-10. Verify production reads/writes.
-11. Tag a version such as `v0.1.1`.
+1. Read the release notes in `docs/releases/`.
+2. Back up important application data.
+3. Preserve your ignored `config.local.js`.
+4. Confirm the Firebase project ID used by the installation.
+5. Do not copy another installation's Firebase configuration.
 
-Firebase Hosting supports rollback of site releases, but a code rollback is **not** a database rollback. Avoid destructive migrations.
+## Fetch available releases
 
-## 0.1.1 note
+    git fetch --tags --prune
 
-This patch is UI/interaction-only from the data-model perspective: `schemaVersion` remains 1 and the existing localStorage key is retained. The service-worker cache key was bumped so browsers do not remain stuck on the 0.1.0 shell.
+List versions:
 
-## 0.1.2 note
+    git tag --sort=-version:refname
 
-0.1.2 is an additive schema-v1 update. Existing workout records are not rewritten. New optional timing, rest, difficulty, and personal-goal fields may be added as the user creates/edits records. Analytics are computed from canonical workout/hike records rather than duplicated counters, which reduces migration and consistency risk.
+## Select a release
+
+For example:
+
+    git switch --detach v0.16.0
+
+The ignored `config.local.js` remains machine-local and is not supplied by
+the public repository.
+
+## Reinstall locked tooling
+
+    npm ci
+    npm --prefix functions ci
+
+Using the lockfiles ensures the release is tested with the dependency
+versions recorded for that version.
+
+## Validate before deployment
+
+Run the release consistency check, application tests, Firestore authorization
+tests, and dependency audits before deploying a new version.
+
+The exact maintained commands are listed in `package.json` and the repository
+CI workflow.
+
+## Build
+
+    npm run build
+    npm run verify:deploy-config
+
+## Deploy
+
+Always specify the intended Firebase project explicitly.
+
+Example:
+
+    PROJECT_ID="your-firebase-project-id"
+    ./node_modules/.bin/firebase deploy --project "$PROJECT_ID" \
+      --only hosting,firestore:rules,firestore:indexes,functions
+
+Using an explicit project ID reduces the chance of deploying to the wrong
+Firebase environment.
+
+## Verify the live installation
+
+Provide the deployed site explicitly:
+
+    LOGTOGETHER_DEPLOY_URL="https://your-site.web.app" npm run verify:live
+
+The live verifier is read-only.
+
+## Rollback
+
+If a new release has a regression, check out the previous known-good tag,
+reinstall its locked dependencies, rebuild it, and deploy that version to the
+same Firebase project.
+
+Before rolling back across a release that changes stored data, read the release
+notes for both versions. A newer data migration may not always be safely
+interpreted by substantially older application code.
+
+## Maintainer release flow
+
+The canonical repository uses:
+
+    main
+        stable release history
+
+    vX.Y.Z-dev
+        active development for the next release
+
+A development branch is tested first. Once accepted, it is promoted to `main`,
+tagged, and verified.
+
+Normal release development should not rewrite or force-push `main`.

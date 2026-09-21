@@ -2,7 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - "v*-dev"
   pull_request:
   workflow_dispatch:
 
@@ -18,8 +20,10 @@ jobs:
     name: Build, regression and authorization tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
     env:
       CI: "true"
+
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,6 +44,9 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Verify release consistency
+        run: npm run verify:release
 
       - name: Build and run unit and regression tests
         run: npm test

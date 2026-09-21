@@ -23,6 +23,8 @@ Setup and operational documentation:
 
 ## Releases
 
+- [v0.16.0 — activity detail, momentum, and family profile polish](releases/V0.16.0.md)
+
 Version-specific release notes are stored in [`releases/`](releases/).
 
 - [v0.15.0 — reliability, groups, and recording polish](releases/V0.15.0.md)

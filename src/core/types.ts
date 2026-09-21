@@ -102,6 +102,7 @@ export interface WorkoutRecord {
   visibility: Visibility;
   selectedViewerIds: string[];
   recordingSource?: RecordingSource;
+  performance?: WorkoutPerformanceMetrics;
   exercises: WorkoutExerciseEntry[];
   routineMode?: "standard" | "circuit";
   circuitRounds?: number;
@@ -110,6 +111,37 @@ export interface WorkoutRecord {
   updatedAt?: string;
   editedAt?: string;
   cloudSyncedAt?: string;
+}
+
+export interface WorkoutPerformanceMetrics {
+  elapsedDurationSec?: number;
+  activeDurationSec?: number;
+  distanceKm?: number;
+  averagePaceSec?: number;
+  fastestPaceSec?: number;
+  paceDistanceM?: number;
+  averageSpeedKph?: number;
+  maximumSpeedKph?: number;
+  elevationGainM?: number;
+  averageCadenceRpm?: number;
+  maximumCadenceRpm?: number;
+  poolLengthM?: number;
+  laps?: number;
+  averageStrokeRateSpm?: number;
+  strokeCount?: number;
+  averagePowerWatts?: number;
+  maximumPowerWatts?: number;
+  resistanceLevel?: number;
+}
+
+export interface PrivateWorkoutMetrics {
+  schemaVersion: 1;
+  workoutId: string;
+  ownerId: string;
+  familyId: string;
+  averageHeartRateBpm?: number;
+  maximumHeartRateBpm?: number;
+  clientUpdatedAt: string;
 }
 
 export interface WorkoutRoutine {
@@ -261,6 +293,7 @@ export interface AppState {
   customSupplements?: CustomSupplement[];
   workouts: WorkoutRecord[];
   hikes: HikeRecord[];
+  privateWorkoutMetrics?: PrivateWorkoutMetrics[];
   activeWorkout: WorkoutRecord | null;
   family: FamilyMemberSummary[];
   familyGoal: { targetActivities: number; completedActivities: number };

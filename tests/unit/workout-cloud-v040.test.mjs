@@ -65,11 +65,12 @@ test("workout and hike deletion use durable local tombstones", () => {
   assert.match(main, /deleteCloudHike/);
 });
 
-test("family comparison uses daily aggregates while family profiles gain weekly summaries", () => {
+test("family comparison uses daily aggregates while family profiles keep weekly data available", () => {
   assert.match(main, /familyWeeklySeries/);
   assert.match(main, /cloudFamilyDaily/);
   assert.match(main, /cloudFamilyWeekly/);
-  assert.match(main, /Weekly achievements/);
+  assert.match(main, /Recent activity/);
+  assert.doesNotMatch(main, />Weekly achievements</);
 });
 
 test("new and explicitly re-saved workouts share to Family while cloud sync preserves stored visibility", () => {

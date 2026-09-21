@@ -13,14 +13,15 @@ export function familyPrivacySummary(locale: Locale): FamilyPrivacySummary {
       shared: [
         "運動紀錄與運動備註",
         "健行摘要（名稱、日期、距離、時間、海拔與備註）",
-        "使用者自行開啟的家庭個人頁內容（生理性別、補充品週總覽與每筆日期／時間／數量、最近運動／健行）",
+        "使用者自行開啟的家庭個人頁內容（生理性別、補充品週總覽與每筆日期／時間／數量、最近活動）",
         "每日熱量與飲水總量",
         "每週任務與徽章"
       ],
       privateToAccount: [
         "身高與體重",
         "逐筆飲水時間",
-        "訓練模板"
+        "訓練模板",
+        "運動心率"
       ],
       localOnly: [
         "GPX 精確路線",
@@ -37,14 +38,15 @@ export function familyPrivacySummary(locale: Locale): FamilyPrivacySummary {
     shared: [
       "Workout records and workout notes",
       "Hike summaries (name, date, distance, time, elevation and notes)",
-      "User-enabled family-profile details (biological sex, weekly supplement totals and each entry's date/time/amount, recent workouts/hikes)",
+      "User-enabled family-profile details (biological sex, weekly supplement totals and each entry's date/time/amount, recent activity)",
       "Daily calorie and water totals",
       "Weekly missions and badges"
     ],
     privateToAccount: [
       "Height and weight",
       "Individual drink timestamps",
-      "Saved workout routines"
+      "Saved workout routines",
+      "Workout heart rate"
     ],
     localOnly: [
       "Precise GPX route traces",

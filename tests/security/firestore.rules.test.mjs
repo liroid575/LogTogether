@@ -89,6 +89,16 @@ async function seed() {
       ...sharedBase, ownerId: "alice", activityKind: "strength", visibility: "selected",
       selectedViewerIds: ["bob"], routineName: "Selected"
     });
+    await setDoc(doc(db, "privateWorkoutMetrics/alice_w1"), {
+      schemaVersion: 1, workoutId: "w1", ownerId: "alice", familyId: "family-a",
+      averageHeartRateBpm: 132, maximumHeartRateBpm: 174,
+      clientUpdatedAt: "2026-09-13T01:00:00.000Z", updatedAt: nowTs()
+    });
+    await setDoc(doc(db, "privateWorkoutMetrics/bob_bob-private"), {
+      schemaVersion: 1, workoutId: "bob-private", ownerId: "bob", familyId: "family-a",
+      averageHeartRateBpm: 118,
+      clientUpdatedAt: "2026-09-13T01:00:00.000Z", updatedAt: nowTs()
+    });
     await setDoc(doc(db, "hydration/h1"), {
       ...sharedBase, ownerId: "alice", visibility: "private", totalMl: 1000
     });
@@ -215,6 +225,36 @@ test("private resources remain private even from the family owner", async () => 
   await assertFails(getDoc(doc(auth("bob"), "workouts/private-w")));
 });
 
+test("v0.16 heart-rate records are queryable only by their owner", async () => {
+  const aliceDb = auth("alice");
+  const own = await assertSucceeds(getDocs(query(
+    collection(aliceDb, "privateWorkoutMetrics"),
+    where("ownerId", "==", "alice")
+  )));
+  assert.deepEqual(own.docs.map(item => item.id), ["alice_w1"]);
+  await assertFails(getDoc(doc(auth("bob"), "privateWorkoutMetrics/alice_w1")));
+  await assertFails(getDoc(doc(auth("alice"), "privateWorkoutMetrics/bob_bob-private")));
+  await assertFails(getDoc(doc(auth("mallory"), "privateWorkoutMetrics/alice_w1")));
+});
+
+test("v0.16 private workout metrics validate identity, range, and immutable linkage", async () => {
+  const aliceDb=auth("alice");
+  await assertSucceeds(setDoc(doc(aliceDb,"privateWorkoutMetrics/alice_new"),{
+    schemaVersion:1,workoutId:"new",ownerId:"alice",familyId:"family-a",
+    averageHeartRateBpm:125,maximumHeartRateBpm:180,
+    clientUpdatedAt:"2026-09-13T02:00:00.000Z",updatedAt:nowTs()
+  }));
+  await assertFails(setDoc(doc(aliceDb,"privateWorkoutMetrics/forged"),{
+    schemaVersion:1,workoutId:"new",ownerId:"bob",familyId:"family-a",
+    averageHeartRateBpm:125,clientUpdatedAt:"2026-09-13T02:00:00.000Z",updatedAt:nowTs()
+  }));
+  await assertFails(setDoc(doc(aliceDb,"privateWorkoutMetrics/out-of-range"),{
+    schemaVersion:1,workoutId:"new",ownerId:"alice",familyId:"family-a",
+    averageHeartRateBpm:301,clientUpdatedAt:"2026-09-13T02:00:00.000Z",updatedAt:nowTs()
+  }));
+  await assertFails(updateDoc(doc(aliceDb,"privateWorkoutMetrics/alice_w1"),{workoutId:"other",updatedAt:nowTs()}));
+});
+
 test("selected sharing permits only listed active family members", async () => {
   await assertSucceeds(getDoc(doc(auth("bob"), "workouts/selected-w")));
   await assertFails(getDoc(doc(auth("charlie"), "workouts/selected-w")));
@@ -232,6 +272,17 @@ test("family member cannot edit another member's workout", async () => {
 test("resource owner cannot transfer ownership or family identity", async () => {
   await assertFails(updateDoc(doc(auth("alice"), "workouts/w1"), { ownerId: "bob" }));
   await assertFails(updateDoc(doc(auth("alice"), "workouts/w1"), { familyId: "family-b" }));
+});
+
+test("v0.16 family-shareable workout performance cannot contain health data", async () => {
+  const db=auth("alice");
+  await assertSucceeds(updateDoc(doc(db,"workouts/w1"),{
+    performance:{elapsedDurationSec:3600,distanceKm:10,averagePaceSec:360,paceDistanceM:1000}
+  }));
+  await assertFails(updateDoc(doc(db,"workouts/w1"),{
+    performance:{elapsedDurationSec:3600,averageHeartRateBpm:140}
+  }));
+  await assertFails(updateDoc(doc(db,"workouts/w1"),{averageHeartRateBpm:140}));
 });
 
 test("active owner can update their own resource without changing security identity", async () => {

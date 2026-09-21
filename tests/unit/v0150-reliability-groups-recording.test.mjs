@@ -92,19 +92,19 @@ await test("personal and family weekly supplement details use the same review-ro
   assert.match(main, /this\.renderWeeklySupplementRows\(familySupplementEntries/);
 });
 
-await test("completed-activity logging starts from actual blank values and exposes only existing non-sensitive tracker metrics", async () => {
+await test("completed-activity logging starts from actual blank values and exposes relevant optional metrics", async () => {
   const main = await text("src/main.ts");
-  assert.match(main, /starter targets are never prefilled as historical facts/);
+  assert.match(main, /starter suggestions are never prefilled as historical facts/);
   assert.match(main, /Not recorded/);
-  assert.match(main, /More tracker \/ device metrics \(optional\)/);
-  assert.match(main, /name="sessionMinutes"/);
-  assert.match(main, /name="speed"/);
-  assert.match(main, /name="incline"/);
-  assert.match(main, /name="resistance"/);
-  assert.match(main, /name="pace500"/);
+  assert.match(main, /Tracker and performance metrics \(optional\)/);
+  assert.match(main, /name="startedAt"/);
+  assert.match(main, /name="completedAt"/);
+  assert.match(main, /name="activeHours"/);
+  assert.match(main, /numberField\("averageSpeed"/);
+  assert.match(main, /numberField\("metricResistance"/);
   assert.doesNotMatch(main, /name="vo2max"/i);
   assert.doesNotMatch(main, /name="hrv"/i);
-  assert.match(main, /knownSessionMinutes>0 \? new Date\(completedAt\.getTime\(\)-knownSessionMinutes\*60000\) : completedAt/);
+  assert.match(main, /elapsedSeconds\(startDate\.toISOString\(\),endDate\.toISOString\(\)\)/);
 });
 
 
@@ -210,10 +210,10 @@ await test("touch reordering always tears down stale iOS drag sessions", async (
 
 await test("v0.15 version and service-worker cache are explicit", async () => {
   const [pkg, main, sw, verify] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js"), text("scripts/verify-live-deployment.mjs")]);
-  assert.equal(JSON.parse(pkg).version, "0.15.0");
-  assert.match(main, /APP_VERSION = "0\.15\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.15\.0-reorder-slots-hotfix10/);
-  assert.match(verify, /v0\.15\.0/);
+  assert.equal(JSON.parse(pkg).version, "0.16.0");
+  assert.match(main, /APP_VERSION = "0\.16\.0"/);
+  assert.match(sw, /logtogether-shell-v0\.16\.0/);
+  assert.match(verify, /v0\.16\.0/);
   assert.match(verify, /attempt <= 12/);
   assert.match(verify, /await sleep\(1_000\)/);
 });

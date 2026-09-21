@@ -745,6 +745,43 @@ svg { width: 1.15em; height: 1.15em; }
   .family-comparison-chart svg { min-height:126px; }
   .comparison-day-labels { font-size:8px; }
 }
+
+/* v0.16.0 activity detail, momentum and circuit polish */
+.science-momentum-copy { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.science-momentum-copy > span { font-weight:800; }
+.science-momentum.complete { padding:12px; border:1px solid color-mix(in srgb,var(--accent) 58%,var(--line)); border-radius:14px; background:color-mix(in srgb,var(--accent) 8%,var(--surface-2)); }
+.momentum-track,.family-momentum-track { position:relative; display:grid; grid-template-columns:repeat(4,1fr); align-items:start; gap:10px; padding:4px 2px 0; }
+.momentum-connector { position:absolute; z-index:0; top:21px; left:12.5%; right:12.5%; height:4px; overflow:hidden; border-radius:999px; background:var(--line); }
+.momentum-connector > span { display:block; width:0; height:100%; border-radius:inherit; background:var(--accent); transition:width .32s ease; }
+.momentum-track > i,.family-momentum-track > i { position:relative; z-index:1; display:grid; justify-items:center; gap:5px; min-width:0; color:var(--muted); font-style:normal; }
+.momentum-track > i > span,.family-momentum-track > i > span { width:38px; height:38px; display:grid; place-items:center; border:3px solid var(--line); border-radius:50%; background:var(--surface); color:var(--muted); font-size:14px; font-weight:900; }
+.momentum-track > i.done > span,.family-momentum-track > i.done > span { border-color:var(--accent); background:var(--accent); color:var(--accent-contrast); }
+.momentum-track > i > small,.family-momentum-track > i > small { font-size:10px; font-weight:800; }
+.momentum-track.complete > i.done:last-child > span,.family-momentum-track.complete > i.done:last-child > span { box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 16%,transparent); }
+.family-momentum-person { display:grid; gap:7px; }
+.family-momentum-person > div:first-child { display:flex; justify-content:space-between; gap:10px; }
+.family-momentum-track .momentum-connector { top:18px; }
+.family-momentum-track > i > span { width:32px; height:32px; border-width:2px; font-size:12px; }
+.active-duration-field,.metric-duration-field { min-width:0; margin:0; padding:11px 12px; border:1px solid var(--line); border-radius:12px; }
+.active-duration-field > legend,.metric-duration-field > legend { padding:0 4px; color:var(--muted); font-size:var(--font-field-label); font-weight:700; }
+.active-duration-field > p { margin:8px 0 0; }
+.hms-input { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.hms-input.compact { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.hms-input label { display:grid; gap:5px; min-width:0; }
+.hms-input label > span { color:var(--muted); font-size:10px; }
+.private-health-metrics { border-color:color-mix(in srgb,var(--accent) 40%,var(--line)); }
+.circuit-builder-actions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.35fr); gap:10px; margin-top:14px; }
+.circuit-builder-actions .btn { width:100%; min-height:48px; font-size:1rem; }
+.circuit-catalogue-filter { margin-top:12px; }
+.exercise-history-detail[hidden] { display:none !important; }
+@media (max-width:560px) {
+  .hms-input { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .circuit-builder-actions { grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion:reduce) {
+  .momentum-connector > span { transition:none; }
+  .science-momentum.complete,.momentum-track.complete > i.done:last-child > span,.family-momentum-track.complete > i.done:last-child > span { box-shadow:none; }
+}
 .workout-sharing-card { display:flex; align-items:center; justify-content:space-between; gap:14px; }
 .workout-sharing-card > div { min-width:0; display:grid; gap:4px; }
 .workout-sharing-card .select { flex:0 0 auto; min-width:128px; }
@@ -3332,3 +3369,8 @@ html.rest-alert-flash #rest-timer { animation:rest-complete-pulse .9s ease-out; 
   .routine-editor-exercise-head > strong { font-size:15px; }
   .circuit-order-buttons { gap:5px; }
 }
+
+/* v0.16 recorded performance details */
+.workout-performance { margin-top:12px; }
+.performance-heading { margin-bottom:8px; font-weight:700; letter-spacing:.02em; }
+.performance-grid { margin-top:0; }

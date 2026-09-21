@@ -19,12 +19,11 @@ test("retrospective activity reuses exercise recording profiles and normal worko
   assert.match(main, /exerciseSessionMetricFlags\(definition\)/);
   assert.match(main, /estimateWorkoutCalories\(workout,this\.currentWeightKg\(\)\)/);
   assert.match(main, /this\.state\.workouts\.push\(workout\)/);
-  assert.match(main, /Date & end time/);
-  assert.match(main, /starter targets are never prefilled as historical facts/);
+  assert.match(main, /Start date & time/);
+  assert.match(main, /starter suggestions are never prefilled as historical facts/);
   assert.match(main, /<option value="" selected>\$\{zh\?"未記錄":"Not recorded"\}/);
-  assert.match(main, /const knownSessionMinutes=timedSession \? minutes : sessionMinutes/);
-  assert.match(main, /knownSessionMinutes>0 \? new Date\(completedAt\.getTime\(\)-knownSessionMinutes\*60000\) : completedAt/);
-  assert.match(main, /game points cannot be entered manually/);
+  assert.match(main, /elapsedSeconds\(startDate\.toISOString\(\),endDate\.toISOString\(\)\)/);
+  assert.match(main, /heart rate, power and device estimates cannot enter game scoring/);
 });
 
 test("feedback uses an external optional Google Forms hook with privacy guidance", async () => {

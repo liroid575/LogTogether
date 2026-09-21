@@ -15,8 +15,7 @@ test("temporary calendar preview controls are removed", () => {
 test("family profile supplemental and recent activity sections start collapsed", () => {
   assert.match(main, /family-profile-details/);
   assert.match(main, /This week's supplements/);
-  assert.match(main, /Recent workouts/);
-  assert.match(main, /Recent hikes/);
+  assert.match(main, /Recent activity/);
   assert.doesNotMatch(main, /<details class="card family-profile-details" open/);
   assert.match(css, /\.family-profile-details > summary/);
 });

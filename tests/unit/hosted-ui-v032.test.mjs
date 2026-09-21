@@ -32,7 +32,7 @@ test("strict style CSP no longer breaks dynamic accent and chart geometry", () =
 test("circuit builder uses profile-aware exercise logging", () => {
   const builder = between(main, "private renderCircuitBuilder(): string", "private renderRecent");
   assert.doesNotMatch(builder, /EXERCISES\.filter\(exercise => exercise\.type === "reps"\)/);
-  assert.match(builder, /EXERCISES\.filter\(exercise => exerciseLibraryGroup\(exercise\) === group\)/);
+  assert.match(builder, /this\.renderExerciseOptions\(this\.circuitLibraryFilter,selected\)/);
 
   const targetFields = between(main, "private circuitTargetFields", "private renderCircuitBuilder");
   assert.match(targetFields, /exerciseScienceLoggingProfile\(definition\)/);

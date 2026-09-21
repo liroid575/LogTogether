@@ -1,114 +1,117 @@
 # Security
 
-## Current status
+LogTogether is a family-oriented, self-hostable application that handles data
+with different privacy requirements.
 
-LogTogether is currently a **family-testing alpha**.
+The project uses automated authorization and regression tests, but those tests
+should not be interpreted as a formal independent security audit.
 
-Firebase Authentication, Firestore synchronization, family access controls, group-scoped sharing, Cloud Functions, notifications, and social features are being exercised in a development environment.
+## Supported versions
 
-The project is not yet presented as a public production service.
+Security fixes are normally made against the latest release and the current
+development branch.
 
-Passing automated tests is a release requirement, but those tests should not be interpreted as a formal independent security audit.
+Older historical releases may remain available for reference but should not be
+assumed to receive security updates.
 
-## Security principles
-
-### Deny by default
-
-Unknown Firestore collections and unsupported access paths are denied rather than implicitly trusted.
+## Security model
 
 ### Server-side authorization
 
 UI controls are not security boundaries.
 
-Firestore Security Rules and server-side Cloud Function checks determine whether an authenticated user may read or modify Cloud data.
+Cloud access is enforced through Firestore Security Rules and server-side
+Cloud Function checks. Hiding a button or page in the browser is never treated
+as sufficient authorization.
 
-Hiding a button or page in the browser is never treated as sufficient authorization.
+### Deny by default
 
-### Immutable security identity
-
-Ownership and family identity cannot be transferred merely by editing a stored record.
-
-Authorization tests cover attempts to:
-
-- change record ownership;
-- change family identity;
-- edit another member's records;
-- reactivate revoked access;
-- promote privileges;
-- bypass invitation rules.
+Unknown Firestore collections and unsupported access paths are denied rather
+than implicitly trusted.
 
 ### Family membership is not blanket access
 
-Being part of a family does not automatically expose every record.
+Being a member of a family does not automatically make every record readable.
 
-Shared resources are constrained by:
+Access may depend on ownership, active membership, family identity, group
+membership, visibility, and explicit sharing rules.
 
-- family identity;
-- active membership;
-- visibility;
-- group membership where applicable;
-- ownership;
-- explicit sharing rules.
-
-Revoked members lose access to family-visible resources.
-
-In v0.15, an ordinary member may belong to more than one group. Authorization uses intersection of the member group sets rather than treating family membership as blanket access. The legacy `groupId` remains as a primary/backward-compatible value while `groupIds` carries the complete membership set. Only the owner may change another member's groups, and the mirrored access/member documents must be updated together.
-
-Pending invite recovery for an installed PWA is restricted to the signed-in user's verified email, pending status, and a bounded query. The opaque invite code remains the direct path; the email recovery path exists only so an iPhone Home Screen app does not depend on Safari-local storage crossing into the standalone PWA container.
+Revoked members lose access to family-visible Cloud data.
 
 ### Sensitive data is separated
 
-Records with different privacy requirements are kept separate rather than combined into one broadly readable document.
+Records with different privacy requirements are kept separate where possible.
 
-Examples include:
+Examples include account settings, body metrics, hydration details, exact
+supplement records, heart-rate data, private workout records, precise hiking
+routes, and local media.
 
-- account settings;
-- body metrics;
-- exact hydration records;
-- owner-only exact supplement documents; the optional family weekly view receives only bounded date/local-time/amount details without entry IDs or full ISO timestamps;
-- private workout records;
-- precise hiking route data;
-- local media.
+Family-facing features use explicitly shared records or bounded summaries
+instead of exposing all underlying private records.
 
-Family-facing features use explicitly shared records or bounded aggregate summaries where appropriate.
+### Local media and precise routes
 
-For example, family progress can expose limited weekly or daily totals without exposing all of the underlying private records used to calculate them.
+Workout media and precise GPX route data currently remain device-local.
 
-### Local media and precise route data
-
-Current workout-photo storage and precise GPX route data remain device-local.
-
-Cloud hiking synchronization uses limited metadata rather than automatically uploading the original precise route.
-
-Cloud-hosted private media should not be enabled until its authorization, retention, deletion, and access model have been separately reviewed and tested.
+Cloud hiking synchronization uses limited metadata rather than automatically
+uploading the original precise route.
 
 ### Browser configuration and secrets
 
-Firebase browser configuration is client-visible by design.
+Firebase browser configuration is client-visible by design and must not be
+treated as an authorization mechanism or administrative secret.
 
-A Firebase web API key or project identifier in browser configuration must not be treated as a secret or authorization mechanism.
+Never commit:
 
-The following must never be committed to the repository:
+- Firebase service-account credentials
+- private VAPID keys
+- administrative credentials
+- private API tokens
+- exported authentication credentials
+- private keys
+- real family-testing exports
+- other server-side secrets
 
-- Firebase service-account credentials;
-- private VAPID keys;
-- administrative credentials;
-- private API tokens;
-- personal family-testing data;
-- exported authentication credentials;
-- other server-side secrets.
-
-Private server material should use the deployment platform's supported secret-management mechanism.
+Server-side secrets should use the deployment platform's supported secret
+management.
 
 ### App Check
 
-Firebase App Check is an abuse-reduction mechanism, not the primary authorization boundary.
+Firebase App Check is an abuse-reduction mechanism, not the primary
+authorization boundary.
 
-Authentication, Firestore Rules, server-side validation, API restrictions, quotas, and monitoring remain necessary even when App Check is enabled.
+Authentication, Firestore Security Rules, server-side validation, API
+restrictions, quotas, and monitoring remain necessary.
 
-## Automated tests
+## Reporting a vulnerability
 
-The normal build and regression suite is:
+Do not publish suspected vulnerabilities, credentials, authentication tokens,
+invitation codes, health records, family data, or precise location data in a
+public issue.
 
-```bash
-npm test
+Use the repository's private security reporting channel when available.
+
+Use synthetic or redacted data when demonstrating a problem.
+
+## Automated checks
+
+The repository includes:
+
+- application and regression tests
+- Firestore authorization tests
+- release consistency checks
+- dependency audits
+
+The main test commands are documented in the repository and CI configuration.
+
+Passing automated checks reduces regression risk but does not prove that the
+application is vulnerability-free.
+
+## Self-hosting responsibility
+
+Each self-hosted installation is responsible for its own Firebase project,
+authentication configuration, authorized domains, App Check configuration,
+API restrictions, quotas, billing controls, secrets, backups, and user access.
+
+A clone of LogTogether should never depend on the maintainer's family Firebase
+project.

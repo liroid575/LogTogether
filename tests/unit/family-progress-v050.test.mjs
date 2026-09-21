@@ -40,15 +40,14 @@ test("family comparison offers calories and water with switchable focus", () => 
   assert.match(css, /water-mode[\s\S]*comparison-line\.member[\s\S]*#4aa3ff/);
 });
 
-test("gender badges weekly achievements supplements and hike summaries appear on family profiles", () => {
+test("gender badges supplements and a unified activity feed appear on family profiles", () => {
   assert.match(client, /biologicalSex/);
   assert.match(client, /saveFamilyWeeklySummary/);
   assert.match(client, /saveCloudBadges/);
   assert.match(main, /biologicalSexLabel/);
-  assert.match(main, /Weekly achievements/);
+  assert.doesNotMatch(main, />Weekly achievements</);
   assert.match(main, /This week's supplements/);
-  assert.match(main, /Recent workouts/);
-  assert.match(main, /Recent hikes/);
+  assert.match(main, /Recent activity/);
   assert.match(main, /cloudFamilyBadges\.filter\(badge=>badge\.ownerId===member\.uid\)/);
 });
 

@@ -54,7 +54,7 @@ test("exercise-level Work target sits beside Rest and only propagates to future 
 test("drafts expose discard immediately and auth uses a global connection overlay", async () => {
   const main = await text("src/main.ts");
   assert.match(main, /workout-draft-actions/);
-  assert.match(main, /Clear this draft and return Home/);
+  assert.match(main, /Clear this draft and stay in a fresh workout composer/);
   assert.match(main, /renderAuthProgressModal\(\)/);
   assert.match(main, /Connecting you to LogTogether/);
   assert.match(main, /Your Local data stays untouched until Cloud access is confirmed/);
