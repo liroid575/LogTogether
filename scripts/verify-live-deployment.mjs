@@ -42,8 +42,8 @@ const fetchUntil = async (path, predicate, label) => {
 
 const [config, serviceWorker, main] = await Promise.all([
   fetchText("/config.js"),
-  fetchUntil("/sw.js", text => text.includes("logtogether-shell-v0.16.0"), "The deployed service worker"),
-  fetchUntil("/assets/main.js", text => text.includes('APP_VERSION = "0.16.0"'), "The deployed application bundle")
+  fetchUntil("/sw.js", text => text.includes("logtogether-shell-v0.17.0"), "The deployed service worker"),
+  fetchUntil("/assets/main.js", text => text.includes('APP_VERSION = "0.17.0"'), "The deployed application bundle")
 ]);
 
 const feedbackMatch = config.match(/feedbackFormUrl\s*:\s*(["'])(.*?)\1/);
@@ -75,11 +75,11 @@ if (
   );
 }
 
-if (!serviceWorker.includes("logtogether-shell-v0.16.0")) {
-  throw new Error("The deployed service worker is not v0.16.0.");
+if (!serviceWorker.includes("logtogether-shell-v0.17.0")) {
+  throw new Error("The deployed service worker is not v0.17.0.");
 }
-if (!main.includes('APP_VERSION = "0.16.0"')) {
-  throw new Error("The deployed application bundle is not v0.16.0.");
+if (!main.includes('APP_VERSION = "0.17.0"')) {
+  throw new Error("The deployed application bundle is not v0.17.0.");
 }
 
-console.log("Live deployment verified: v0.16.0 shell, app bundle, and deployment configuration are valid.");
+console.log("Live deployment verified: v0.17.0 shell, app bundle, and deployment configuration are valid.");

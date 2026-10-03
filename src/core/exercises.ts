@@ -9,11 +9,11 @@ export const EXERCISES: ExerciseDefinition[] = [
   { id: "chin_up", names: { en: "Chin-up", "zh-TW": "反手引體向上" }, type: "reps", category: "back" },
   { id: "inverted_row", names: { en: "Inverted Row", "zh-TW": "反向划船" }, type: "reps", category: "back" },
   { id: "scapular_pull_up", names: { en: "Scapular Pull-up", "zh-TW": "肩胛引體" }, type: "reps", category: "back" },
-  { id: "bodyweight_squat", names: { en: "Bodyweight Squat", "zh-TW": "徒手深蹲" }, type: "reps", category: "legs" },
+  { id: "bodyweight_squat", names: { en: "Bodyweight Squat", "zh-TW": "深蹲（徒手）" }, type: "reps", category: "legs" },
   { id: "pistol_squat", names: { en: "Pistol Squat", "zh-TW": "單腿深蹲" }, type: "reps", category: "legs" },
   { id: "bulgarian_split_squat", names: { en: "Bulgarian Split Squat", "zh-TW": "保加利亞分腿蹲" }, type: "reps", category: "legs" },
   { id: "glute_bridge", names: { en: "Glute Bridge", "zh-TW": "臀橋" }, type: "reps", category: "legs" },
-  { id: "bodyweight_calf_raise", names: { en: "Bodyweight Calf Raise", "zh-TW": "徒手提踵" }, type: "reps", category: "legs" },
+  { id: "bodyweight_calf_raise", names: { en: "Standing Calf Raise", "zh-TW": "站姿提踵" }, type: "reps", category: "legs" },
   { id: "wall_sit", names: { en: "Wall Sit", "zh-TW": "靠牆深蹲" }, type: "duration", category: "legs" },
   { id: "lying_leg_raise", names: { en: "Lying Leg Raise", "zh-TW": "仰臥抬腿" }, type: "reps", category: "core" },
   { id: "hanging_knee_raise", names: { en: "Hanging Knee Raise", "zh-TW": "懸垂屈膝抬腿" }, type: "reps", category: "core" },
@@ -52,7 +52,7 @@ export const EXERCISES: ExerciseDefinition[] = [
   { id: "leg_curl", names: { en: "Leg Curl", "zh-TW": "腿彎舉" }, type: "weight_reps", category: "legs" },
   { id: "romanian_deadlift", names: { en: "Romanian Deadlift", "zh-TW": "羅馬尼亞硬舉" }, type: "weight_reps", category: "legs" },
   { id: "walking_lunge", names: { en: "Walking Lunge", "zh-TW": "行走弓箭步" }, type: "reps", category: "legs" },
-  { id: "calf_raise", names: { en: "Calf Raise", "zh-TW": "提踵" }, type: "weight_reps", category: "legs" },
+  { id: "calf_raise", names: { en: "Weighted Calf Raise", "zh-TW": "負重提踵" }, type: "weight_reps", category: "legs" },
   { id: "plank", names: { en: "Plank", "zh-TW": "平板撐" }, type: "duration", category: "core" },
   { id: "side_plank", names: { en: "Side Plank", "zh-TW": "側平板撐" }, type: "duration", category: "core" },
   { id: "crunch", names: { en: "Crunch", "zh-TW": "捲腹" }, type: "reps", category: "core" },
@@ -172,6 +172,22 @@ export const EXERCISES: ExerciseDefinition[] = [
   { id: "kickboxing_knees", names: { en: "Kickboxing — Knee Strikes", "zh-TW": "踢拳－膝擊" }, type: "reps", category: "legs", group: "kickboxing" },
   { id: "kickboxing_rounds", names: { en: "Kickboxing — Rounds / Sparring", "zh-TW": "踢拳－回合／對練" }, type: "duration", category: "cardio", group: "kickboxing" },
   { id: "boxing_speed_bag", names: { en: "Boxing — Speed Bag", "zh-TW": "拳擊－速度球" }, type: "duration", category: "cardio", group: "kickboxing" },
+
+  // Dance, mind-body and practical mobility. Session activities use duration
+  // plus perceived effort; mobility drills use simple per-side reps or holds.
+  { id: "kpop_pop_dance", names: { en: "K-pop / Pop Dance", "zh-TW": "K-pop／流行舞蹈" }, type: "duration", category: "cardio", group: "dance_mind_body", loggingProfile: "mind_body_session", movementPattern: "cardio", progressionProfile: "cardio", metabolicEquivalentRange: [4.5, 7.3] },
+  { id: "dance_cardio", names: { en: "Dance Cardio", "zh-TW": "舞蹈有氧" }, type: "duration", category: "cardio", group: "dance_mind_body", loggingProfile: "mind_body_session", movementPattern: "cardio", progressionProfile: "cardio", metabolicEquivalentRange: [5.0, 8.0] },
+  { id: "barre_ballet_fitness", names: { en: "Barre / Ballet Fitness", "zh-TW": "芭蕾雕塑／Barre" }, type: "duration", category: "mobility", group: "dance_mind_body", loggingProfile: "mind_body_session", movementPattern: "mobility", progressionProfile: "mobility", metabolicEquivalentRange: [3.0, 5.0] },
+  { id: "mat_pilates", names: { en: "Mat Pilates", "zh-TW": "墊上皮拉提斯" }, type: "duration", category: "mobility", group: "dance_mind_body", loggingProfile: "mind_body_session", movementPattern: "mobility", progressionProfile: "mobility", muscleWeights: { core: .55, mobility: .30, legs: .15 }, metabolicEquivalentRange: [2.8, 4.8] },
+  { id: "vr_combat_fitness", names: { en: "VR Boxing / Combat Fitness", "zh-TW": "VR 拳擊／格鬥健身" }, type: "duration", category: "cardio", group: "dance_mind_body", loggingProfile: "mind_body_session", movementPattern: "cardio", progressionProfile: "cardio", muscleWeights: { cardio: .55, arms: .15, shoulders: .10, core: .10, legs: .10 }, metabolicEquivalentRange: [5.0, 9.0] },
+  { id: "standing_cross_body_knee_drive", names: { en: "Standing Cross-Body Knee Drive", "zh-TW": "站姿交叉提膝" }, type: "reps", category: "cardio", group: "home_functional", loggingProfile: "conditioning_intervals", movementPattern: "cardio", progressionProfile: "cardio", muscleWeights: { cardio: .50, core: .30, legs: .20 } },
+  { id: "front_back_leg_swing", names: { en: "Front / Back Leg Swings", "zh-TW": "前後擺腿" }, type: "reps", category: "mobility", group: "mobility_yoga", loggingProfile: "dynamic_mobility", movementPattern: "mobility", progressionProfile: "mobility" },
+  { id: "lateral_leg_swing", names: { en: "Lateral Leg Swings", "zh-TW": "左右擺腿" }, type: "reps", category: "mobility", group: "mobility_yoga", loggingProfile: "dynamic_mobility", movementPattern: "mobility", progressionProfile: "mobility" },
+  { id: "hip_90_90_switch", names: { en: "90/90 Hip Switches", "zh-TW": "90／90 髖部轉換" }, type: "reps", category: "mobility", group: "mobility_yoga", loggingProfile: "dynamic_mobility", movementPattern: "mobility", progressionProfile: "mobility" },
+  { id: "adductor_rock_back", names: { en: "Adductor Rock-backs", "zh-TW": "內收肌後坐活動" }, type: "reps", category: "mobility", group: "mobility_yoga", loggingProfile: "dynamic_mobility", movementPattern: "mobility", progressionProfile: "mobility" },
+  { id: "cossack_squat_mobility", names: { en: "Cossack Squat Mobility", "zh-TW": "哥薩克深蹲活動度" }, type: "reps", category: "mobility", group: "mobility_yoga", loggingProfile: "dynamic_mobility", movementPattern: "mobility", progressionProfile: "mobility" },
+  { id: "frog_adductor_stretch", names: { en: "Frog / Adductor Stretch", "zh-TW": "青蛙式／內收肌伸展" }, type: "duration", category: "mobility", group: "mobility_yoga", loggingProfile: "static_stretch", movementPattern: "mobility", progressionProfile: "mobility" },
+  { id: "deep_squat_hold", names: { en: "Deep Squat Hold", "zh-TW": "深蹲底部停留" }, type: "duration", category: "mobility", group: "mobility_yoga", loggingProfile: "static_stretch", movementPattern: "mobility", progressionProfile: "mobility" },
 ];
 
 const CALISTHENICS_IDS = new Set([
@@ -183,7 +199,7 @@ const CALISTHENICS_IDS = new Set([
 ]);
 
 // Keep the legacy `sports_other` type readable, but do not render an empty group.
-export const EXERCISE_LIBRARY_GROUPS: ExerciseLibraryGroup[] = ["home_functional", "gym", "calisthenics", "outdoor_cardio", "mobility_yoga", "swimming", "kickboxing"];
+export const EXERCISE_LIBRARY_GROUPS: ExerciseLibraryGroup[] = ["home_functional", "gym", "calisthenics", "outdoor_cardio", "mobility_yoga", "dance_mind_body", "swimming", "kickboxing"];
 
 export function exerciseLibraryGroup(exercise: ExerciseDefinition): ExerciseLibraryGroup {
   if (exercise.group) return exercise.group;
@@ -266,7 +282,8 @@ const STATIC_STRETCH_IDS = new Set([
 const UNILATERAL_EXERCISE_IDS = new Set([
   "single_arm_row","bulgarian_split_squat","walking_lunge","pistol_squat","shrimp_squat",
   "standing_hip_abduction","low_step_up","supported_single_leg_stand","side_plank","bird_dog",
-  "hip_flexor_stretch","hamstring_stretch","quad_stretch","calf_stretch","pigeon_pose","warrior_one","warrior_two","thoracic_rotation"
+  "hip_flexor_stretch","hamstring_stretch","quad_stretch","calf_stretch","pigeon_pose","warrior_one","warrior_two","thoracic_rotation",
+  "front_back_leg_swing","lateral_leg_swing","adductor_rock_back","cossack_squat_mobility","frog_adductor_stretch","standing_cross_body_knee_drive"
 ]);
 
 export type ExerciseLaterality = "none" | "optional" | "per_side";
@@ -363,6 +380,7 @@ export function exerciseStarterDefault(exercise: ExerciseDefinition): ExerciseSt
   if (profile === "conditioning_intervals") {
     if (exercise.id === "jump_rope_double_unders") return { sets: 5, durationSec: 30, restSec: 45, recoverySec: 45 };
     if (exercise.id === "jump_rope_basic" || exercise.id === "jump_rope_single_unders") return { sets: 5, durationSec: 60, restSec: 30, recoverySec: 30 };
+    if (exercise.id === "standing_cross_body_knee_drive") return { sets: 2, reps: 20, durationSec: 45, restSec: 45, recoverySec: 45 };
     const power = exercise.id === "jump_squat";
     return power ? { sets: 4, reps: 5, repMin: 3, repMax: 6, restSec: 120, recoverySec: 120 }
       : { sets: 4, durationSec: 30, restSec: 60, recoverySec: 60 };
@@ -381,6 +399,7 @@ export function exerciseStarterDefault(exercise: ExerciseDefinition): ExerciseSt
   if (profile === "rounds") return { sets: 3, durationSec: exercise.id === "boxing_speed_bag" ? 120 : 120, restSec: 60 };
   if (profile === "skill_drill") return { sets: 3, durationSec: 60, restSec: 45, recoverySec: 45 };
   if (profile === "cardio_session") return { sets: 1, minutes: 20, restSec: 0 };
+  if (profile === "mind_body_session") return { sets: 1, minutes: 20, restSec: 0 };
 
   // Ordinary resistance. Compound lifts get slightly longer rest, while
   // isolation movements stay near the familiar 3x10 starting experience.
@@ -420,7 +439,7 @@ export function exerciseMovementPattern(exercise: ExerciseDefinition): ExerciseM
   if (lower.has(exercise.id)) return "lower";
   if (exercise.category === "core" || ["farmers_carry"].includes(exercise.id)) return "core";
   const profile = exerciseScienceLoggingProfile(exercise);
-  if (["static_stretch","dynamic_mobility","yoga_flow","balance_hold"].includes(profile)) return "mobility";
+  if (["static_stretch","dynamic_mobility","yoga_flow","mind_body_session","balance_hold"].includes(profile)) return exercise.movementPattern ?? "mobility";
   if (["skill_drill","water_skill"].includes(profile)) return "skill";
   if (["cardio_session","conditioning_intervals","sprint_intervals","swim_session","rounds"].includes(profile)) return "cardio";
   // Safe fallback for resistance exercises that are added to the library later
@@ -439,7 +458,7 @@ export function exerciseProgressionProfile(exercise: ExerciseDefinition): Exerci
   if (profile === "swim_session") return "swimming";
   if (profile === "rounds") return "combat";
   if (["skill_drill","water_skill"].includes(profile)) return "skill";
-  if (["static_stretch","dynamic_mobility","yoga_flow","balance_hold"].includes(profile)) return "mobility";
+  if (["static_stretch","dynamic_mobility","yoga_flow","mind_body_session","balance_hold"].includes(profile)) return exercise.progressionProfile ?? "mobility";
   if (["cardio_session","conditioning_intervals","sprint_intervals"].includes(profile)) return "cardio";
   if (["skill_sets","isometric_sets"].includes(profile)) return SKILL_ISOMETRIC_IDS.has(exercise.id) || SKILL_STRENGTH_IDS.has(exercise.id) ? "skill_strength" : "isometric";
   return exercise.type === "weight_reps" ? "load_reps" : "bodyweight_reps";

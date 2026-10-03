@@ -17,8 +17,8 @@ test("group management is collapsible and saves direct name edits without a Rena
   assert.match(main, /requestSubmit\(\)/);
 });
 
-test("mobile workout dock keeps Save routine and undo toast is moved to the top", () => {
-  assert.match(css, /dock-save-routine \{ display: inline-flex; \}/);
+test("mobile workout dock omits Save routine and undo toast stays at the top", () => {
+  assert.doesNotMatch(css, /dock-save-routine/);
   assert.match(css, /\.toast \{[\s\S]*top: calc\(70px/);
 });
 

@@ -30,13 +30,16 @@ await test("Gold Days use one reconcilable daily social event instead of the v0.
 });
 
 await test("Pokes cap at seven and enforce server-side mute plus recipient flood control", async () => {
-  const fn = await text("functions/index.js");
+  const [fn,policy] = await Promise.all([text("functions/index.js"),text("functions/poke-policy.js")]);
   assert.match(fn, /const POKE_MAX = 7/);
   assert.match(fn, /const RECIPIENT_FLOOD_MAX = 5/);
   assert.match(fn, /mutedPokeUids\.includes\(senderUid\)/);
   assert.match(fn, /sharedGroups\.length > 0 && sharedGroups\.every\(group => recipientPrefs\.mutedPokeGroupIds\.includes\(group\)\)/);
   assert.match(fn, /pokeRecipientLimits/);
-  assert.match(fn, /const unlimited = senderAccess\.role === "owner"/);
+  assert.doesNotMatch(fn, /const unlimited = senderAccess\.role === "owner"/);
+  assert.match(fn, /assessPokeSpend/);
+  assert.match(policy, /if \(current < 1\)/);
+  assert.match(policy, /next:current - 1/);
 });
 
 await test("owner test notification targets the current browser subscription", async () => {

@@ -1,4 +1,4 @@
-import type { Locale } from "./types.js";
+import type { GoalDifficulty, Locale } from "./types.js";
 
 const TEXT = {
   en: {
@@ -327,4 +327,23 @@ export type TranslationKey = keyof typeof TEXT.en;
 
 export function t(locale: Locale, key: TranslationKey): string {
   return TEXT[locale][key];
+}
+
+const GOAL_DIFFICULTY_LABELS: Record<Locale,Record<GoalDifficulty,string>> = {
+  en:{easy:"Easy",normal:"Normal",hard:"Hard",extreme:"Extreme"},
+  "zh-TW":{easy:"輕鬆",normal:"一般",hard:"困難",extreme:"極限"}
+};
+
+export function goalDifficultyLabel(locale:Locale,difficulty:GoalDifficulty):string {
+  return GOAL_DIFFICULTY_LABELS[locale][difficulty];
+}
+
+export type SemanticLabelKey = "goldDay"|"weeklyMissions"|"mobility"|"logCompletedActivity"|"workingSet"|"round";
+const SEMANTIC_LABELS:Record<Locale,Record<SemanticLabelKey,string>>={
+  en:{goldDay:"Gold Day",weeklyMissions:"Weekly Missions",mobility:"Mobility",logCompletedActivity:"Log completed activity",workingSet:"Working set",round:"Round"},
+  "zh-TW":{goldDay:"金色活動日",weeklyMissions:"每週任務",mobility:"活動度",logCompletedActivity:"補登已完成運動",workingSet:"正式組",round:"回合"}
+};
+
+export function semanticLabel(locale:Locale,key:SemanticLabelKey):string {
+  return SEMANTIC_LABELS[locale][key];
 }

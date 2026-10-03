@@ -1,4 +1,4 @@
-const CACHE = "logtogether-shell-v0.16.0";
+const CACHE = "logtogether-shell-v0.17.0";
 const SHELL = [
   "/",
   "/index.html",

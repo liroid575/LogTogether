@@ -102,14 +102,25 @@ export function estimateWorkoutCalories(workout: WorkoutRecord, weightKg: number
   const averageDifficulty = difficulties.length
     ? difficulties.reduce((sum, value) => sum + value, 0) / difficulties.length
     : 3;
-  const elapsedEstimate = caloriesAt(metForDifficulty(averageDifficulty), elapsedMinutes);
+  const exerciseMet=(exercise:WorkoutRecord["exercises"][number])=>{
+    const definition=exerciseById(exercise.exerciseId);
+    const range=definition?.metabolicEquivalentRange;
+    if(!range) return metForDifficulty(exercise.difficulty ?? 3);
+    const fraction=(Math.max(1,Math.min(5,exercise.difficulty ?? 3))-1)/4;
+    return range[0]+(range[1]-range[0])*fraction;
+  };
+  const allExercisesHaveRanges=workout.exercises.length>0 && workout.exercises.every(exercise=>Boolean(exerciseById(exercise.exerciseId)?.metabolicEquivalentRange));
+  const elapsedMet=allExercisesHaveRanges
+    ? workout.exercises.reduce((sum,exercise)=>sum+exerciseMet(exercise),0)/workout.exercises.length
+    : metForDifficulty(averageDifficulty);
+  const elapsedEstimate = caloriesAt(elapsedMet, elapsedMinutes);
 
   let setEstimate = 0;
   for (const exercise of workout.exercises) {
     const difficulty = exercise.difficulty ?? 3;
     const definition = exerciseById(exercise.exerciseId);
     const profile = definition ? exerciseEntryLoggingProfile(exercise, definition) : "sets";
-    const timedProfile = ["cardio_session","conditioning_intervals","sprint_intervals","swim_session","rounds","skill_drill","water_skill","mobility_session","static_stretch","dynamic_mobility","yoga_flow","balance_hold"].includes(profile);
+    const timedProfile = ["cardio_session","conditioning_intervals","sprint_intervals","swim_session","rounds","skill_drill","water_skill","mobility_session","mind_body_session","static_stretch","dynamic_mobility","yoga_flow","balance_hold"].includes(profile);
     const completedSets = exercise.sets.filter(set => set.completed);
     for (const set of completedSets) {
       let activeSeconds = 0;
@@ -120,7 +131,7 @@ export function estimateWorkoutCalories(workout: WorkoutRecord, weightKg: number
         // Use 3 s/repetition with a small minimum for a recorded completed set.
         activeSeconds = Math.max(15, Math.min(180, Math.max(0, set.reps ?? 0) * 3));
       }
-      setEstimate += caloriesAt(metForDifficulty(difficulty), activeSeconds / 60);
+      setEstimate += caloriesAt(exerciseMet(exercise), activeSeconds / 60);
     }
     if (completedSets.length > 1 && exercise.restSec > 0) {
       const recordedRestSeconds = completedSets.slice(0, -1).reduce(
@@ -237,12 +248,14 @@ function resistanceLike(profile: ReturnType<typeof scienceProfile>): boolean {
   return ["sets","skill_sets","isometric_sets","loaded_carry"].includes(profile);
 }
 
-function cardioLike(profile: ReturnType<typeof scienceProfile>): boolean {
-  return ["cardio_session","conditioning_intervals","sprint_intervals","swim_session","rounds","skill_drill","water_skill"].includes(profile);
+function cardioLike(profile: ReturnType<typeof scienceProfile>, definition?: ExerciseDefinition): boolean {
+  return ["cardio_session","conditioning_intervals","sprint_intervals","swim_session","rounds","skill_drill","water_skill"].includes(profile)
+    || (profile === "mind_body_session" && definition?.movementPattern === "cardio");
 }
 
-function mobilityLike(profile: ReturnType<typeof scienceProfile>): boolean {
-  return ["mobility_session","static_stretch","dynamic_mobility","yoga_flow"].includes(profile);
+function mobilityLike(profile: ReturnType<typeof scienceProfile>, definition?: ExerciseDefinition): boolean {
+  return ["mobility_session","static_stretch","dynamic_mobility","yoga_flow"].includes(profile)
+    || (profile === "mind_body_session" && definition?.movementPattern === "mobility");
 }
 
 function balanceLike(profile: ReturnType<typeof scienceProfile>): boolean {
@@ -256,12 +269,12 @@ function exerciseTrainingCredits(exercise: WorkoutRecord["exercises"][number]): 
   if (!completed.length) return {};
   const profile = exerciseEntryLoggingProfile(exercise, def);
 
-  if (cardioLike(profile)) {
+  if (cardioLike(profile,def)) {
     if (exerciseSafetyFlags(def).includes("no_pr")) return {};
     const minutes = completed.reduce((sum, set) => sum + completedDurationSeconds(set), 0) / 60;
     return { cardio: Math.min(2, Math.max(0, minutes / 20)) };
   }
-  if (mobilityLike(profile)) {
+  if (mobilityLike(profile,def)) {
     const minutes = completed.reduce((sum, set) => sum + completedDurationSeconds(set), 0) / 60;
     return { mobility: Math.min(1.5, Math.max(0, minutes / 10)) };
   }
@@ -333,7 +346,7 @@ function workoutCardioMinutes(workout: WorkoutRecord): number {
   for (const exercise of workout.exercises) {
     const def=exerciseById(exercise.exerciseId); if(!def) continue;
     const profile=exerciseEntryLoggingProfile(exercise,def);
-    if (!cardioLike(profile) || exerciseSafetyFlags(def).includes("no_pr")) continue;
+    if (!cardioLike(profile,def) || exerciseSafetyFlags(def).includes("no_pr")) continue;
     total += exerciseActiveMinutes(exercise);
   }
   return total;
@@ -343,7 +356,7 @@ function workoutMobilityMinutes(workout: WorkoutRecord): number {
   let total=0;
   for (const exercise of workout.exercises) {
     const def=exerciseById(exercise.exerciseId); if(!def) continue;
-    if (mobilityLike(exerciseEntryLoggingProfile(exercise,def))) total += exerciseActiveMinutes(exercise);
+    if (mobilityLike(exerciseEntryLoggingProfile(exercise,def),def)) total += exerciseActiveMinutes(exercise);
   }
   return total;
 }
@@ -415,8 +428,8 @@ export function scienceWeekMetrics(workouts: WorkoutRecord[], hikes: HikeRecord[
         workoutStrength += count;
         const pattern=exerciseMovementPattern(def);
         if(pattern==="push"||pattern==="pull"||pattern==="lower"||pattern==="core") movement[pattern]+=count;
-      } else if(cardioLike(profile) && !exerciseSafetyFlags(def).includes("no_pr")) cardioMinutes += exerciseActiveMinutes(exercise);
-      else if(mobilityLike(profile)) mobilityMinutes += exerciseActiveMinutes(exercise);
+      } else if(cardioLike(profile,def) && !exerciseSafetyFlags(def).includes("no_pr")) cardioMinutes += exerciseActiveMinutes(exercise);
+      else if(mobilityLike(profile,def)) mobilityMinutes += exerciseActiveMinutes(exercise);
       else if(balanceLike(profile)) balanceMinutes += exerciseActiveMinutes(exercise);
     }
     if(workoutStrength) strengthDates.set(date,(strengthDates.get(date)??0)+workoutStrength);
@@ -528,7 +541,7 @@ export function weeklyHealthGuidelineProgress(workouts: WorkoutRecord[], hikes: 
       const def=exerciseById(exercise.exerciseId); if(!def) continue;
       const profile=exerciseEntryLoggingProfile(exercise,def);
       if(resistanceLike(profile)) sets += workingSets(exercise).length;
-      else if(cardioLike(profile)&&!exerciseSafetyFlags(def).includes("no_pr")){
+      else if(cardioLike(profile,def)&&!exerciseSafetyFlags(def).includes("no_pr")){
         const minutes=exerciseActiveMinutes(exercise);
         aerobicEquivalentMinutes += minutes * (exercise.difficulty === undefined ? 0 : exercise.difficulty>=4 ? 2 : exercise.difficulty===3 ? 1 : 0);
       }
