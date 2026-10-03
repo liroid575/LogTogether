@@ -1,6 +1,6 @@
 import type { SetEntry, ExerciseLoggingProfile, GoalConfig } from "./types.js";
 
-const timedProfiles = new Set<ExerciseLoggingProfile>(["isometric_sets", "balance_hold", "static_stretch", "loaded_carry", "conditioning_intervals", "sprint_intervals", "rounds", "skill_drill", "water_skill", "cardio_session", "swim_session", "mobility_session", "yoga_flow"]);
+const timedProfiles = new Set<ExerciseLoggingProfile>(["isometric_sets", "balance_hold", "static_stretch", "loaded_carry", "conditioning_intervals", "sprint_intervals", "rounds", "skill_drill", "water_skill", "cardio_session", "swim_session", "mobility_session", "yoga_flow", "mind_body_session"]);
 export function workTargetSeconds(set: SetEntry | undefined, profile: ExerciseLoggingProfile): number {
   if (!set) return 0;
   const value = set.timerTargetSec ?? set.targetWorkSec ?? (timedProfiles.has(profile) ? set.durationSec : 0) ?? 0;

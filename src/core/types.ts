@@ -3,7 +3,7 @@ export type Theme = "dark" | "light";
 export type Visibility = "private" | "family" | "selected";
 export type ActivityKind = "strength" | "hike" | "walk";
 export type ExerciseCategory = "chest" | "back" | "shoulders" | "arms" | "legs" | "core" | "cardio" | "mobility";
-export type ExerciseLibraryGroup = "home_functional" | "gym" | "calisthenics" | "outdoor_cardio" | "mobility_yoga" | "swimming" | "kickboxing" | "sports_other";
+export type ExerciseLibraryGroup = "home_functional" | "gym" | "calisthenics" | "outdoor_cardio" | "mobility_yoga" | "dance_mind_body" | "swimming" | "kickboxing" | "sports_other";
 export type ExerciseLoggingProfile =
   | "sets"
   | "skill_sets"
@@ -17,6 +17,7 @@ export type ExerciseLoggingProfile =
   | "static_stretch"
   | "dynamic_mobility"
   | "yoga_flow"
+  | "mind_body_session"
   | "swim_session"
   | "water_skill"
   | "rounds"
@@ -41,6 +42,8 @@ export interface ExerciseDefinition {
   progressionProfile?: ExerciseProgressionProfile;
   safetyFlags?: ExerciseSafetyFlag[];
   scienceTags?: ExerciseScienceTag[];
+  /** Evidence-informed internal range used only for calorie trend estimates. */
+  metabolicEquivalentRange?: readonly [number, number];
 }
 
 export interface SetEntry {
@@ -269,7 +272,12 @@ export interface ScienceState {
 
 export interface WorkoutPreferences {
   restTimerSound: boolean;
-  keepScreenAwake: boolean;
+  wakeLockMode: "off" | "workout" | "open";
+  orientationPreference: "portrait" | "device";
+  stableWorkoutView: boolean;
+  /** Legacy v0.16 setting, read once during migration and then ignored. */
+  keepScreenAwake?: boolean;
+  startCountdownSec: 0 | 3 | 5 | 10;
 }
 export interface NotificationPreferences {
   goldDays: boolean;

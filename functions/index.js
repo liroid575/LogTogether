@@ -1,4 +1,5 @@
 const { reconcileGoldReward } = require("./gold-rewards");
+const { assessPokeSpend } = require("./poke-policy");
 const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
@@ -247,7 +248,7 @@ exports.onFamilyDailyChanged = onDocumentWritten({document:"familyProgress/{dail
     const eligible = daily?.goldDay === true;
     // Older dates can be corrected, but never mass-minted on first upgrade.
     if (!ledgerSnap.exists && identity.date !== datePartsInZone().date) return null;
-    const result = reconcileGoldReward(ledgerSnap.exists ? ledgerSnap.data() : null, walletSnap.data(), eligible, access.role === "owner");
+    const result = reconcileGoldReward(ledgerSnap.exists ? ledgerSnap.data() : null, walletSnap.data(), eligible);
     if (!result) return null;
     tx.set(ledgerRef,{...result.ledger,kind:"gold",ownerId:identity.ownerId,familyId:identity.familyId,date:identity.date,updatedAt:FieldValue.serverTimestamp()},{merge:true});
     tx.set(walletRef,{schemaVersion:1,ownerId:identity.ownerId,balance:result.balance,correctionDebt:result.correctionDebt,maxBalance:POKE_MAX,updatedAt:FieldValue.serverTimestamp()},{merge:true});
@@ -303,7 +304,6 @@ exports.sendPoke = onCall({region:REGION,secrets:PUSH_SECRETS,enforceAppCheck:tr
     throw new HttpsError("permission-denied","That person is not in your active family.");
   }
   const familyId = senderAccess.familyId;
-  const unlimited = senderAccess.role === "owner"; // temporary developer test privilege for v0.11.x
   await recordUsage(familyId,{pokeCalls:1});
 
   const [senderMemberSnap,recipientMemberSnap,recipientUserSnap] = await Promise.all([
@@ -335,7 +335,8 @@ exports.sendPoke = onCall({region:REGION,secrets:PUSH_SECRETS,enforceAppCheck:tr
       ]);
       const now = Date.now();
       const last = rateSnap.data()?.lastSentAt?.toMillis?.() ?? 0;
-      if (!unlimited && last && now-last < POKE_COOLDOWN_MS) {
+      const spend = assessPokeSpend({balance:walletSnap.data()?.balance,lastSentAtMs:last,nowMs:now,cooldownMs:POKE_COOLDOWN_MS});
+      if (spend.reason === "cooldown") {
         throw new HttpsError("resource-exhausted","You can Poke this person again later.");
       }
       const recent = Array.isArray(limitSnap.data()?.recentSentAtMs)
@@ -344,13 +345,13 @@ exports.sendPoke = onCall({region:REGION,secrets:PUSH_SECRETS,enforceAppCheck:tr
       if (recent.length >= RECIPIENT_FLOOD_MAX) {
         throw new HttpsError("resource-exhausted","This person has received several Pokes recently. Try again later.");
       }
-      const current = Math.max(0,Math.min(POKE_MAX,Number(walletSnap.data()?.balance ?? 0)));
-      if (!unlimited && current < 1) throw new HttpsError("failed-precondition","Earn a Gold Day to get another Poke.");
-      const next = unlimited ? current : current-1;
-      if (!unlimited) tx.set(walletRef,{schemaVersion:1,ownerId:senderUid,balance:next,maxBalance:POKE_MAX,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+      if (spend.reason === "balance") throw new HttpsError("failed-precondition","Earn a Gold Day to get another Poke.");
+      if (!spend.allowed) throw new HttpsError("failed-precondition","This Poke cannot be sent.");
+      const next = spend.next;
+      tx.set(walletRef,{schemaVersion:1,ownerId:senderUid,balance:next,maxBalance:POKE_MAX,updatedAt:FieldValue.serverTimestamp()},{merge:true});
       tx.set(rateRef,{schemaVersion:1,senderUid,recipientUid,familyId,lastSentAt:FieldValue.serverTimestamp()},{merge:true});
       tx.set(recipientLimitRef,{schemaVersion:1,recipientUid,familyId,recentSentAtMs:[...recent,now],updatedAt:FieldValue.serverTimestamp()},{merge:true});
-      return {balance:next,unlimited};
+      return {balance:next};
     });
   } catch (error) {
     await recordUsage(familyId,{pokesBlocked:1});
@@ -367,7 +368,7 @@ exports.sendPoke = onCall({region:REGION,secrets:PUSH_SECRETS,enforceAppCheck:tr
     url:"/#family"
   });
   await recordUsage(familyId,{pokesDelivered:1,pushDeliveries:delivery.sent,pushFailures:delivery.failed});
-  return {balance:result.balance,maxBalance:POKE_MAX,unlimited:result.unlimited};
+  return {balance:result.balance,maxBalance:POKE_MAX};
 });
 
 exports.sendTestNotification = onCall({region:REGION,secrets:PUSH_SECRETS,enforceAppCheck:true}, async request => {

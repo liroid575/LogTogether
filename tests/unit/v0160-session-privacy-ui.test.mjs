@@ -6,8 +6,8 @@ import { elapsedSeconds, hmsToSeconds, secondsToHms, sanitizePerformanceMetrics,
 
 const text = async path => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
-test("v0.16 keeps the stable catalogue and derives activity-specific tracker fields", () => {
-  assert.equal(EXERCISES.length, 156);
+test("v0.16 catalogue entries remain available and tracker fields stay activity-specific", () => {
+  assert.ok(EXERCISES.length >= 156);
   const byId=id=>EXERCISES.find(item=>item.id===id);
   assert.equal(sessionMetricAvailability(byId("cycling")).averagePower,true);
   assert.equal(sessionMetricAvailability(byId("swim_freestyle")).poolLength,true);
@@ -42,7 +42,7 @@ test("heart rate has an owner-only document, rules and diagnostics boundary", as
 test("family activity, nested disclosures, chronology and fresh discard behavior are explicit", async () => {
   const main=await text("src/main.ts");
   assert.match(main,/Recent activity/);
-  assert.match(main,/recentActivities[\s\S]*sort\(\(a,b\)=>b\.at\.localeCompare\(a\.at\)\)/);
+  assert.match(main,/recentActivities[\s\S]*localDateKey\(b\.at\)\.localeCompare\(localDateKey\(a\.at\)\)/);
   assert.match(main,/family-workout-date-divider/);
   assert.match(main,/data-exercise-detail/);
   assert.match(main,/detail\.hidden=expanded/);
@@ -51,11 +51,11 @@ test("family activity, nested disclosures, chronology and fresh discard behavior
   assert.match(main,/\.sort\(\(a,b\)=>a\.at\.localeCompare\(b\.at\)\)/);
 });
 
-test("momentum, shared pickers and release markers are present", async () => {
+test("momentum and shared pickers remain present after the v0.17 release bump", async () => {
   const [main,css,pkg,sw]=await Promise.all([text("src/main.ts"),text("public/styles.css"),text("package.json"),text("public/sw.js")]);
-  assert.equal(JSON.parse(pkg).version,"0.16.0");
-  assert.match(main,/APP_VERSION = "0\.16\.0"/);
-  assert.match(sw,/logtogether-shell-v0\.16\.0/);
+  assert.equal(JSON.parse(pkg).version,"0.17.0");
+  assert.match(main,/APP_VERSION = "0\.17\.0"/);
+  assert.match(sw,/logtogether-shell-v0\.17\.0/);
   assert.match(main,/renderMomentumTrack/);
   assert.match(main,/data-dev-momentum="\$\{value\}"/);
   assert.match(main,/Gold \+ Momentum queue/);

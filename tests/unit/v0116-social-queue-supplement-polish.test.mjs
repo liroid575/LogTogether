@@ -61,10 +61,12 @@ test("custom supplement manager uses one dropdown editor without closing the log
   assert.match(main, /entry\.customLabel=label/);
 });
 
-test("owner Poke backend privilege remains temporary while recipient flood protection remains", async () => {
-  const fn = await text("functions/index.js");
-  assert.match(fn, /const unlimited = senderAccess\.role === "owner"; \/\/ temporary developer test privilege for v0\.11\.x/);
-  assert.match(fn, /if \(!unlimited && last && now-last < POKE_COOLDOWN_MS\)/);
+test("owner Pokes use the same wallet, cooldown and flood protection as every member", async () => {
+  const [fn,policy] = await Promise.all([text("functions/index.js"),text("functions/poke-policy.js")]);
+  assert.doesNotMatch(fn, /const unlimited = senderAccess\.role === "owner"/);
+  assert.match(fn, /assessPokeSpend/);
+  assert.match(policy, /nowMs - lastSentAtMs < cooldownMs/);
+  assert.match(fn, /tx\.set\(walletRef/);
   assert.match(fn, /RECIPIENT_FLOOD_MAX = 5/);
   assert.match(fn, /if \(recent\.length >= RECIPIENT_FLOOD_MAX\)/);
 });

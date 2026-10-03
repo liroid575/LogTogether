@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.17.0 — Workout Readiness, Reliability & Activity Expansion
+
+- Added configurable Off / 3 / 5 / 10 second pre-start countdowns with GO-time timestamps and more resilient audio recovery.
+- Improved active-workout wake-lock recovery, navigation, circuit return behavior, and the persistent workout dock.
+- Added recent-supplement shortcuts, compact always-visible saved routines, manual workout photos, and cleaner Settings disclosures.
+- Removed the temporary owner Poke privilege so every family role follows the same wallet and cooldown rules.
+- Expanded the exercise library with dance, mind-body, combat mobility, conditioning, and generic VR boxing activities while keeping mission and health-data boundaries explicit.
+- Improved Taiwanese Traditional Chinese consistency and corrected Family Gold Day aggregation.
+- Added local-date hydration reconciliation, safer Family refresh/recovery, saved-routine Work targets, and direct Momentum celebration testing.
+- Browser runtime npm dependencies remain at zero.
+- Current service-worker cache marker: `logtogether-shell-v0.17.0`.
+
 ## v0.16.0 — Activity Detail, Momentum & Family Polish
 
 - Added precise completed-activity timing and activity-specific optional tracker metrics.

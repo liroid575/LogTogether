@@ -1,13 +1,13 @@
 "use strict";
 // Pure ledger arithmetic. Called only inside the Firestore transaction.
 // correctionDebt remembers a revoked token that was already spent.
-function reconcileGoldReward(previous, wallet = {}, eligible, unlimited = false) {
+function reconcileGoldReward(previous, wallet = {}, eligible) {
   let balance = Math.max(0, Math.min(7, Math.trunc(Number(wallet.balance) || 0)));
   let correctionDebt = Math.max(0, Math.trunc(Number(wallet.correctionDebt) || 0));
   if (previous && previous.schemaVersion !== 2) return null; // No attribution for legacy awards.
   if (previous?.eligible === eligible || (!previous && !eligible)) return null;
   const first = !previous;
-  const credited = previous ? previous.credited === true : !unlimited && (balance < 7 || correctionDebt > 0);
+  const credited = previous ? previous.credited === true : balance < 7 || correctionDebt > 0;
   const applied = eligible && credited && (balance < 7 || correctionDebt > 0);
   if (eligible ? applied : previous?.applied === true) {
     if (eligible) {

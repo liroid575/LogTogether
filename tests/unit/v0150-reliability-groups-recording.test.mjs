@@ -10,9 +10,9 @@ import {
 
 const text = async path => readFile(new URL(`../../${path}`, import.meta.url), "utf8");
 
-await test("v0.15 keeps the exact 156-exercise catalogue and all exercises resolve to a science profile", () => {
-  assert.equal(EXERCISES.length, 156);
-  assert.equal(new Set(EXERCISES.map(item=>item.id)).size, 156);
+await test("the original v0.15 catalogue stays intact and all exercises resolve to a science profile", () => {
+  assert.ok(EXERCISES.length >= 156);
+  assert.equal(new Set(EXERCISES.map(item=>item.id)).size, EXERCISES.length);
   for (const exercise of EXERCISES) assert.ok(exerciseScienceLoggingProfile(exercise));
   assert.equal(exerciseLaterality(exerciseById("downward_dog")), "none");
   assert.equal(exerciseLaterality(exerciseById("warrior_one")), "per_side");
@@ -208,12 +208,12 @@ await test("touch reordering always tears down stale iOS drag sessions", async (
   assert.match(main, /document\.addEventListener\("selectstart",preventSelection/);
 });
 
-await test("v0.15 version and service-worker cache are explicit", async () => {
+await test("current version and service-worker cache are explicit", async () => {
   const [pkg, main, sw, verify] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js"), text("scripts/verify-live-deployment.mjs")]);
-  assert.equal(JSON.parse(pkg).version, "0.16.0");
-  assert.match(main, /APP_VERSION = "0\.16\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.16\.0/);
-  assert.match(verify, /v0\.16\.0/);
+  assert.equal(JSON.parse(pkg).version, "0.17.0");
+  assert.match(main, /APP_VERSION = "0\.17\.0"/);
+  assert.match(sw, /logtogether-shell-v0\.17\.0/);
+  assert.match(verify, /v0\.17\.0/);
   assert.match(verify, /attempt <= 12/);
   assert.match(verify, /await sleep\(1_000\)/);
 });

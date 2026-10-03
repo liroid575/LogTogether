@@ -10,7 +10,7 @@ The project gradually grew into a bilingual family fitness PWA with structured w
 
 LogTogether is currently an **alpha** developed through real family use.
 
-The current application version is **v0.16.0**. The source is intended for personal and family self-hosting; the maintainer's own family deployment is private and is not a public demo backend.
+The current application version is **v0.17.0**. The source is intended for personal and family self-hosting; the maintainer's own family deployment is private and is not a public demo backend.
 
 The project favors:
 
@@ -86,7 +86,7 @@ The project favors:
 - In-app social-event fallback when push is unavailable.
 - Per-person and per-group muting.
 - Flood protection.
-- Poke balance limits for normal users.
+- Poke balance limits for all family roles.
 - Foreground Poke animations and family activity celebrations.
 - Large-family burst aggregation so many events do not overwhelm the UI.
 
@@ -308,6 +308,10 @@ LogTogether/
 Generated directories such as `dist/` and `node_modules/` are intentionally not committed.
 
 ## Current release lineage
+
+### v0.17.0 — workout readiness, reliability, and activity expansion
+
+v0.17.0 adds configurable pre-start countdowns, more resilient workout timing and screen-wake behavior, fair Poke spending for owners and members, cleaner active-workout controls, improved Taiwanese Traditional Chinese, faster supplement logging, and new dance, mind-body, combat-mobility, conditioning, and VR fitness activities. Existing privacy boundaries and zero browser-runtime-dependency design remain intact. See [`docs/releases/V0.17.0.md`](docs/releases/V0.17.0.md).
 
 ### v0.16.0 — activity detail, momentum, and family polish
 

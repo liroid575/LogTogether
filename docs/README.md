@@ -23,6 +23,7 @@ Setup and operational documentation:
 
 ## Releases
 
+- [v0.17.0 — workout readiness, fair Pokes, and activity expansion](releases/V0.17.0.md)
 - [v0.16.0 — activity detail, momentum, and family profile polish](releases/V0.16.0.md)
 
 Version-specific release notes are stored in [`releases/`](releases/).
@@ -32,6 +33,7 @@ Version-specific release notes are stored in [`releases/`](releases/).
 
 ## Research
 
+- [v0.17.0 activity and UX audit](research/V0.17.0_ACTIVITY_AND_UX_AUDIT.md) — recording, scoring, privacy, and evidence boundaries for the new activities and readiness controls
 - [v0.15.0 exercise and reliability audit](research/LogTogether_v0.15.0_exercise_and_reliability_audit.xlsx) — exact 156-exercise recording audit, v0.15 product/security decisions, and sources
 - [v0.14.0 exercise and UX audit](research/LogTogether_v0.14.0_exercise_and_ux_audit.xlsx) — exercise-by-exercise defaults, product decisions, device metrics, and sources
 

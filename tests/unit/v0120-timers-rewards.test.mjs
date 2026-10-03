@@ -38,19 +38,19 @@ test("weekly difficulty snapshots keep old weeks stable", () => {
 });
 
 test("Gold reward deletion revokes and restoration reconciles exactly once", () => {
-  const earned = reconcileGoldReward(null,{balance:0},true,false);
+  const earned = reconcileGoldReward(null,{balance:0},true);
   assert.deepEqual({balance:earned.balance,debt:earned.correctionDebt,notify:earned.notify},{balance:1,debt:0,notify:true});
-  const removed = reconcileGoldReward(earned.ledger,{balance:0},false,false);
+  const removed = reconcileGoldReward(earned.ledger,{balance:0},false);
   assert.deepEqual({balance:removed.balance,debt:removed.correctionDebt},{balance:0,debt:1});
-  const restored = reconcileGoldReward(removed.ledger,{balance:0,correctionDebt:1},true,false);
+  const restored = reconcileGoldReward(removed.ledger,{balance:0,correctionDebt:1},true);
   assert.deepEqual({balance:restored.balance,debt:restored.correctionDebt,notify:restored.notify},{balance:0,debt:0,notify:false});
-  assert.equal(reconcileGoldReward(restored.ledger,{balance:0},true,false),null);
+  assert.equal(reconcileGoldReward(restored.ledger,{balance:0},true),null);
 });
 
 test("a full wallet does not create a future revocation debt", () => {
-  const earned = reconcileGoldReward(null,{balance:7},true,false);
+  const earned = reconcileGoldReward(null,{balance:7},true);
   assert.equal(earned.balance,7);
   assert.equal(earned.ledger.applied,false);
-  const removed = reconcileGoldReward(earned.ledger,{balance:7},false,false);
+  const removed = reconcileGoldReward(earned.ledger,{balance:7},false);
   assert.deepEqual({balance:removed.balance,debt:removed.correctionDebt},{balance:7,debt:0});
 });

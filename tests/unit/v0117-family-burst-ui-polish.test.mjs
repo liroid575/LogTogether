@@ -6,9 +6,9 @@ const text = async path => readFile(new URL(`../../${path}`, import.meta.url), "
 
 test("the current release versions the family burst UI shell", async () => {
   const [pkg, main, sw] = await Promise.all([text("package.json"), text("src/main.ts"), text("public/sw.js")]);
-  assert.equal(JSON.parse(pkg).version, "0.16.0");
-  assert.match(main, /APP_VERSION = "0\.16\.0"/);
-  assert.match(sw, /logtogether-shell-v0\.16\.0/);
+  assert.equal(JSON.parse(pkg).version, "0.17.0");
+  assert.match(main, /APP_VERSION = "0\.17\.0"/);
+  assert.match(sw, /logtogether-shell-v0\.17\.0/);
 });
 
 test("received Poke rain is substantially larger without changing the animation engine", async () => {
@@ -32,7 +32,8 @@ test("large social inbox batches prioritize Pokes and compact overflow", async (
 test("Gold Day and badge bursts summarize at three or more without losing inbox ids", async () => {
   const main = await text("src/main.ts");
   assert.match(main, /if\(items\.length>=3\)/);
-  assert.match(main, /family members earned a Gold Day/);
+  assert.match(main, /family members logged.*Gold Days/);
+  assert.match(main, /reached Gold Day on.*days/);
   assert.match(main, /new family badges/);
   assert.match(main, /socialEventIds:idsFor\(items\)/);
   assert.match(main, /markSocialEventsPresented\(next\.socialEventIds\)/);
